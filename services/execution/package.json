@@ -1,0 +1,6 @@
+{
+  "name": "@icarus/execution-service", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": { "dev": "tsx watch src/index.ts", "build": "tsc --noEmit", "check-types": "tsc --noEmit", "lint": "eslint src --max-warnings 0", "test": "vitest run" },
+  "dependencies": { "@icarus/contracts": "*", "@icarus/service-kit": "*", "bullmq": "^5.58.5", "ioredis": "^5.7.0", "zod": "^4.1.5" },
+  "devDependencies": { "@repo/eslint-config": "*", "@repo/typescript-config": "*", "tsx": "^4.20.5", "typescript": "5.9.3", "vitest": "^3.2.4" }
+}

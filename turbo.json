@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "tui",
+  "globalEnv": ["NODE_ENV", "SERVICE_NAME", "WEB_ORIGINS", "DATABASE_URL", "SESSION_SECRET", "PLATFORM_ADMIN_EMAIL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PUBLIC_API_URL", "JUDGE0_URL", "JUDGE0_TOKEN", "JUDGE0_CPP_ID", "JUDGE0_JAVA_ID", "JUDGE0_PYTHON_ID", "JUDGE0_JAVASCRIPT_ID", "IDENTITY_URL", "CLASSROOM_URL", "ASSESSMENT_URL", "EXECUTION_URL", "INTEGRITY_URL", "PORT"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "check-types": {
+      "dependsOn": ["^check-types"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

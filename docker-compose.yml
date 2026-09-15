@@ -1,0 +1,124 @@
+name: icarus
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: icarus
+      POSTGRES_PASSWORD: icarus
+      POSTGRES_DB: icarus
+    volumes: ["icarus-postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icarus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes: ["icarus-redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  judge0-db:
+    image: postgres:16.2-alpine
+    env_file: ./infra/judge0/judge0.conf
+    volumes: ["judge0-postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  judge0-redis:
+    image: redis:7.2.4-alpine
+    env_file: ./infra/judge0/judge0.conf
+    command: ["sh", "-c", "redis-server --appendonly no --requirepass $$REDIS_PASSWORD"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    privileged: true
+    volumes: ["./infra/judge0/judge0.conf:/judge0.conf:ro"]
+    depends_on:
+      judge0-db: { condition: service_healthy }
+      judge0-redis: { condition: service_healthy }
+    restart: unless-stopped
+  judge0-worker:
+    image: judge0/judge0:1.13.1
+    command: ["./scripts/workers"]
+    privileged: true
+    volumes: ["./infra/judge0/judge0.conf:/judge0.conf:ro"]
+    depends_on:
+      judge0-db: { condition: service_healthy }
+      judge0-redis: { condition: service_healthy }
+    restart: unless-stopped
+  identity:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/identity-service" } }
+    environment:
+      PORT: 4001
+      DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus
+      SESSION_SECRET: ${SESSION_SECRET:-icarus-local-session-secret-change-in-production}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-admin@icarus.local}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PUBLIC_API_URL: http://localhost:4000
+      STUDENT_APP_URL: http://localhost:3000
+      TEACHER_APP_URL: http://localhost:3001
+      ADMIN_APP_URL: http://localhost:3002
+    depends_on: { postgres: { condition: service_healthy } }
+  classroom:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/classroom-service" } }
+    environment: { PORT: 4002, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
+    depends_on: { postgres: { condition: service_healthy } }
+  assessment:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/assessment-service" } }
+    environment: { PORT: 4003, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
+    depends_on: { postgres: { condition: service_healthy } }
+  execution:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/execution-service" } }
+    environment:
+      PORT: 4004
+      REDIS_URL: redis://redis:6379
+      JUDGE0_URL: http://judge0-server:2358
+      ASSESSMENT_URL: http://assessment:4003
+    depends_on:
+      redis: { condition: service_healthy }
+      judge0-server: { condition: service_started }
+  integrity:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/integrity-service" } }
+    environment: { PORT: 4005, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
+    depends_on: { postgres: { condition: service_healthy } }
+  gateway:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/api-gateway" } }
+    environment:
+      PORT: 4000
+      IDENTITY_URL: http://identity:4001
+      CLASSROOM_URL: http://classroom:4002
+      ASSESSMENT_URL: http://assessment:4003
+      EXECUTION_URL: http://execution:4004
+      INTEGRITY_URL: http://integrity:4005
+    ports: ["4000:4000"]
+    depends_on: [identity, classroom, assessment, execution, integrity]
+  student:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: student } }
+    environment: { PORT: 3000, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
+    ports: ["3000:3000"]
+    depends_on: [gateway]
+  teacher:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: teacher } }
+    environment: { PORT: 3001, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
+    ports: ["3001:3001"]
+    depends_on: [gateway]
+  admin:
+    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: admin } }
+    environment: { PORT: 3002, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
+    ports: ["3002:3002"]
+    depends_on: [gateway]
+volumes:
+  icarus-postgres:
+  icarus-redis:
+  judge0-postgres:
