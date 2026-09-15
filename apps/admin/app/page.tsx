@@ -1,20 +1,199 @@
 "use client";
-import { useState } from "react";
-import { Activity, BookOpen, CheckCircle2, GraduationCap, LayoutDashboard, MailPlus, Server, ShieldCheck, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Activity,
+  BookOpen,
+  CheckCircle2,
+  GraduationCap,
+  LayoutDashboard,
+  MailPlus,
+  Server,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { AppShell, StatusPill } from "@repo/ui/shell";
 import { Button } from "@repo/ui/button";
 import { Card } from "@repo/ui/card";
 import { Metric } from "@repo/ui/metric";
 
-const services = ["API gateway", "Identity", "Classroom", "Assessment", "Execution", "Integrity"];
+const services = [
+  "API gateway",
+  "Identity",
+  "Classroom",
+  "Assessment",
+  "Execution",
+  "Integrity",
+];
+const apiUrl =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 export default function AdminDashboard() {
   const [email, setEmail] = useState("");
-  const [invitations, setInvitations] = useState(["nisha.k@college.edu", "rahul.dev@academy.org"]);
-  const invite = () => { if (email.includes("@")) { setInvitations([email, ...invitations]); setEmail(""); } };
-  return <AppShell role="Admin" name="Avery Morgan" initials="AM" navigation={[{ label: "Overview", active: true, icon: <LayoutDashboard size={17} /> }, { label: "Teachers", icon: <GraduationCap size={17} /> }, { label: "Students", icon: <Users size={17} /> }, { label: "Service health", icon: <Activity size={17} /> }, { label: "Audit log", icon: <ShieldCheck size={17} /> }]}>
-    <div className="mb-7 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-xs font-bold uppercase text-[#176B5B]">Platform control</p><h1 className="text-2xl font-bold">Good morning, Avery</h1><p className="mt-1 text-sm text-[#6E7B76]">Monitor access, educators, and the systems keeping exams online.</p></div><Button><MailPlus size={16} /> Invite teacher</Button></div>
-    <Card className="mb-6 grid grid-cols-2 py-5 lg:grid-cols-4"><Metric label="Teachers" value="24" detail="3 joined this month" icon={<GraduationCap size={18} />} /><Metric label="Students" value="1,284" detail="Across 38 active classes" icon={<Users size={18} />} /><Metric label="Live exams" value="7" detail="326 students connected" icon={<BookOpen size={18} />} /><Metric label="Queue health" value="99.98%" detail="14 ms median enqueue" icon={<Activity size={18} />} /></Card>
-    <div className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]"><Card><div className="flex items-center justify-between border-b border-[#E4E8E4] px-5 py-4"><div><h2 className="font-bold">Service health</h2><p className="text-xs text-[#7B8883]">Live status from internal health endpoints</p></div><StatusPill tone="green">All operational</StatusPill></div><div className="divide-y divide-[#EDF0ED]">{services.map((service, index) => <div key={service} className="flex items-center justify-between px-5 py-3.5"><div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-md bg-[#EDF5F1] text-[#176B5B]"><Server size={15} /></span><div><div className="text-sm font-semibold">{service}</div><div className="text-xs text-[#89948F]">v0.1.0 · {index + 2} instances</div></div></div><div className="flex items-center gap-2 text-xs font-medium text-[#176B5B]"><CheckCircle2 size={15} /> Operational</div></div>)}</div></Card>
-      <Card><div className="border-b border-[#E4E8E4] px-5 py-4"><h2 className="font-bold">Teacher access</h2><p className="text-xs text-[#7B8883]">Invite a Google account to become a teacher.</p></div><div className="p-5"><label className="mb-1.5 block text-xs font-semibold" htmlFor="teacher-email">Email address</label><div className="flex gap-2"><input id="teacher-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="teacher@college.edu" className="h-9 min-w-0 flex-1 rounded-md border border-[#D8DED9] px-3 text-sm outline-none focus:border-[#176B5B]" /><Button onClick={invite}>Invite</Button></div><div className="mt-5 text-[11px] font-bold uppercase text-[#82908A]">Recent invitations</div><div className="mt-2 divide-y divide-[#EDF0ED]">{invitations.map((inviteEmail, index) => <div key={inviteEmail} className="flex items-center justify-between py-3"><div><div className="text-sm font-medium">{inviteEmail}</div><div className="text-xs text-[#8B9692]">{index === 0 ? "Just now" : `${index + 1} days ago`}</div></div><StatusPill tone={index === 1 ? "green" : "amber"}>{index === 1 ? "Joined" : "Pending"}</StatusPill></div>)}</div></div></Card></div>
-  </AppShell>;
+  const [invitations, setInvitations] = useState<string[]>([]);
+  useEffect(() => {
+    void fetch(`${apiUrl}/auth/teacher-invitations`, {
+      credentials: "include",
+    }).then(async (response) => {
+      if (response.ok)
+        setInvitations(
+          (
+            (await response.json()) as { invitations: { email: string }[] }
+          ).invitations.map((item) => item.email),
+        );
+    });
+  }, []);
+  const invite = async () => {
+    if (!email.includes("@")) return;
+    const response = await fetch(`${apiUrl}/auth/teacher-invitations`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (response.ok) {
+      setInvitations([email.toLowerCase(), ...invitations]);
+      setEmail("");
+    }
+  };
+  return (
+    <AppShell
+      role="Admin"
+      name="Avery Morgan"
+      initials="AM"
+      navigation={[
+        {
+          label: "Overview",
+          active: true,
+          icon: <LayoutDashboard size={17} />,
+        },
+        { label: "Teachers", icon: <GraduationCap size={17} /> },
+        { label: "Students", icon: <Users size={17} /> },
+        { label: "Service health", icon: <Activity size={17} /> },
+        { label: "Audit log", icon: <ShieldCheck size={17} /> },
+      ]}
+    >
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="mb-1 text-xs font-bold uppercase text-[#176B5B]">
+            Platform control
+          </p>
+          <h1 className="text-2xl font-bold">Good morning, Avery</h1>
+          <p className="mt-1 text-sm text-[#6E7B76]">
+            Monitor access, educators, and the systems keeping exams online.
+          </p>
+        </div>
+        <Button>
+          <MailPlus size={16} /> Invite teacher
+        </Button>
+      </div>
+      <Card className="mb-6 grid grid-cols-2 py-5 lg:grid-cols-4">
+        <Metric
+          label="Teachers"
+          value="24"
+          detail="3 joined this month"
+          icon={<GraduationCap size={18} />}
+        />
+        <Metric
+          label="Students"
+          value="1,284"
+          detail="Across 38 active classes"
+          icon={<Users size={18} />}
+        />
+        <Metric
+          label="Live exams"
+          value="7"
+          detail="326 students connected"
+          icon={<BookOpen size={18} />}
+        />
+        <Metric
+          label="Queue health"
+          value="99.98%"
+          detail="14 ms median enqueue"
+          icon={<Activity size={18} />}
+        />
+      </Card>
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
+        <Card>
+          <div className="flex items-center justify-between border-b border-[#E4E8E4] px-5 py-4">
+            <div>
+              <h2 className="font-bold">Service health</h2>
+              <p className="text-xs text-[#7B8883]">
+                Live status from internal health endpoints
+              </p>
+            </div>
+            <StatusPill tone="green">All operational</StatusPill>
+          </div>
+          <div className="divide-y divide-[#EDF0ED]">
+            {services.map((service, index) => (
+              <div
+                key={service}
+                className="flex items-center justify-between px-5 py-3.5"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="grid size-8 place-items-center rounded-md bg-[#EDF5F1] text-[#176B5B]">
+                    <Server size={15} />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold">{service}</div>
+                    <div className="text-xs text-[#89948F]">
+                      v0.1.0 · {index + 2} instances
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-medium text-[#176B5B]">
+                  <CheckCircle2 size={15} /> Operational
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <div className="border-b border-[#E4E8E4] px-5 py-4">
+            <h2 className="font-bold">Teacher access</h2>
+            <p className="text-xs text-[#7B8883]">
+              Invite a Google account to become a teacher.
+            </p>
+          </div>
+          <div className="p-5">
+            <label
+              className="mb-1.5 block text-xs font-semibold"
+              htmlFor="teacher-email"
+            >
+              Email address
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="teacher-email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="teacher@college.edu"
+                className="h-9 min-w-0 flex-1 rounded-md border border-[#D8DED9] px-3 text-sm outline-none focus:border-[#176B5B]"
+              />
+              <Button onClick={invite}>Invite</Button>
+            </div>
+            <div className="mt-5 text-[11px] font-bold uppercase text-[#82908A]">
+              Recent invitations
+            </div>
+            <div className="mt-2 divide-y divide-[#EDF0ED]">
+              {invitations.map((inviteEmail, index) => (
+                <div
+                  key={inviteEmail}
+                  className="flex items-center justify-between py-3"
+                >
+                  <div>
+                    <div className="text-sm font-medium">{inviteEmail}</div>
+                    <div className="text-xs text-[#8B9692]">
+                      {index === 0 ? "Just now" : `${index + 1} days ago`}
+                    </div>
+                  </div>
+                  <StatusPill tone={index === 1 ? "green" : "amber"}>
+                    {index === 1 ? "Joined" : "Pending"}
+                  </StatusPill>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+    </AppShell>
+  );
 }
