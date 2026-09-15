@@ -59,12 +59,22 @@ services:
   identity:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/identity-service" } }
     environment:
-      PORT: 4001
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 8000
       DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus
-      SESSION_SECRET: ${SESSION_SECRET:-icarus-local-session-secret-change-in-production}
-      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-admin@icarus.local}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-admin@example.edu}
+      PLATFORM_ADMIN_NAME: ${PLATFORM_ADMIN_NAME:-College Administrator}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      STUDENT_SELF_REGISTRATION: ${STUDENT_SELF_REGISTRATION:-false}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-icarus_session}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-8}
+      OAUTH_STATE_TTL_MINUTES: ${OAUTH_STATE_TTL_MINUTES:-10}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      MAX_TEACHER_IMPORT_ROWS: ${MAX_TEACHER_IMPORT_ROWS:-2000}
+      MAX_TEACHER_IMPORT_BYTES: ${MAX_TEACHER_IMPORT_BYTES:-2000000}
       PUBLIC_API_URL: http://localhost:4000
       STUDENT_APP_URL: http://localhost:3000
       TEACHER_APP_URL: http://localhost:3001
@@ -96,7 +106,7 @@ services:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/api-gateway" } }
     environment:
       PORT: 4000
-      IDENTITY_URL: http://identity:4001
+      IDENTITY_URL: http://identity:8000
       CLASSROOM_URL: http://classroom:4002
       ASSESSMENT_URL: http://assessment:4003
       EXECUTION_URL: http://execution:4004

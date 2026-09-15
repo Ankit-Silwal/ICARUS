@@ -1,0 +1,178 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["identity"]
+}
+
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+
+  @@schema("identity")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DISABLED
+
+  @@schema("identity")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+
+  @@schema("identity")
+}
+
+enum ImportStatus {
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+
+  @@schema("identity")
+}
+
+model User {
+  id              String          @id @default(uuid()) @db.Uuid
+  email           String          @unique @db.VarChar(320)
+  name            String          @db.VarChar(160)
+  avatarUrl       String?         @map("avatar_url") @db.Text
+  role            UserRole
+  status          UserStatus      @default(PENDING)
+  emailVerifiedAt DateTime?       @map("email_verified_at") @db.Timestamptz(3)
+  lastLoginAt     DateTime?       @map("last_login_at") @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  oauthAccounts   OAuthAccount[]
+  sessions        Session[]
+  teacherProfile  TeacherProfile?
+  imports         TeacherImport[] @relation("ImportCreator")
+  auditLogs       AuditLog[]      @relation("AuditActor")
+
+  @@index([role, status])
+  @@map("user_account")
+  @@schema("identity")
+}
+
+model OAuthAccount {
+  id                String   @id @default(uuid()) @db.Uuid
+  provider          String   @db.VarChar(40)
+  providerAccountId String   @map("provider_account_id") @db.VarChar(255)
+  providerEmail     String   @map("provider_email") @db.VarChar(320)
+  userId            String   @map("user_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_account")
+  @@schema("identity")
+}
+
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  userId     String    @map("user_id") @db.Uuid
+  userAgent  String?   @map("user_agent") @db.VarChar(512)
+  ipAddress  String?   @map("ip_address") @db.VarChar(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("session")
+  @@schema("identity")
+}
+
+model OAuthState {
+  id           String   @id @default(uuid()) @db.Uuid
+  stateHash    String   @unique @map("state_hash") @db.Char(64)
+  codeVerifier String   @map("code_verifier") @db.VarChar(128)
+  nonce        String   @db.VarChar(128)
+  returnTo     String?  @map("return_to") @db.Text
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("oauth_state")
+  @@schema("identity")
+}
+
+model TeacherProfile {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @unique @map("user_id") @db.Uuid
+  employeeId String?  @unique @map("employee_id") @db.VarChar(80)
+  department String?  @db.VarChar(160)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("teacher_profile")
+  @@schema("identity")
+}
+
+model TeacherInvitation {
+  id         String           @id @default(uuid()) @db.Uuid
+  email      String           @unique @db.VarChar(320)
+  status     InvitationStatus @default(PENDING)
+  invitedBy  String?          @map("invited_by") @db.Uuid
+  expiresAt  DateTime?        @map("expires_at") @db.Timestamptz(3)
+  acceptedAt DateTime?        @map("accepted_at") @db.Timestamptz(3)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, expiresAt])
+  @@map("teacher_invitation")
+  @@schema("identity")
+}
+
+model TeacherImport {
+  id           String       @id @default(uuid()) @db.Uuid
+  fileName     String       @map("file_name") @db.VarChar(255)
+  status       ImportStatus @default(PROCESSING)
+  totalRows    Int          @default(0) @map("total_rows")
+  importedRows Int          @default(0) @map("imported_rows")
+  rejectedRows Int          @default(0) @map("rejected_rows")
+  result       Json?
+  createdById  String       @map("created_by_id") @db.Uuid
+  completedAt  DateTime?    @map("completed_at") @db.Timestamptz(3)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy    User         @relation("ImportCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([createdById, createdAt])
+  @@map("teacher_import")
+  @@schema("identity")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(120)
+  entityType String   @map("entity_type") @db.VarChar(80)
+  entityId   String?  @map("entity_id") @db.VarChar(255)
+  metadata   Json?
+  ipAddress  String?  @map("ip_address") @db.VarChar(64)
+  userAgent  String?  @map("user_agent") @db.VarChar(512)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+  @@schema("identity")
+}

@@ -27,6 +27,7 @@ coverage
 out/
 build
 dist
+services/identity/src/generated/prisma/
 
 
 # Debug
