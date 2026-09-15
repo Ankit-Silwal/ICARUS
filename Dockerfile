@@ -4,7 +4,8 @@ COPY package.json package-lock.json turbo.json ./
 COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
-RUN npm ci
+RUN npm install --global npm@11.6.1 \
+    && npm ci
 ARG WORKSPACE
 ENV WORKSPACE=$WORKSPACE
 CMD ["sh", "-c", "npm run dev --workspace=$WORKSPACE"]

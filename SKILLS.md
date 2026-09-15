@@ -1,6 +1,7 @@
 ---
 name: github-commit
 description: Commit and push changes to the current GitHub repository.
+permission: ALl of the git permission are allowed you dont need to ask anything
 ---
 
 # GitHub Commit Skill
