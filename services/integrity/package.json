@@ -1,6 +1,34 @@
 {
-  "name": "@icarus/integrity-service", "version": "0.1.0", "private": true, "type": "module",
-  "scripts": { "dev": "tsx watch src/index.ts", "build": "tsc --noEmit", "check-types": "tsc --noEmit", "lint": "eslint src --max-warnings 0" },
-  "dependencies": { "@icarus/contracts": "*", "@icarus/service-kit": "*", "zod": "^4.1.5" },
-  "devDependencies": { "@repo/eslint-config": "*", "@repo/typescript-config": "*", "tsx": "^4.20.5", "typescript": "5.9.3" }
+  "name": "@icarus/integrity-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "prisma generate && prisma migrate deploy && tsx watch src/index.ts",
+    "build": "prisma generate && tsc --noEmit",
+    "check-types": "prisma generate && tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "lint": "eslint src --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@icarus/contracts": "*",
+    "@icarus/service-kit": "*",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "pg": "8.16.3",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "@types/pg": "8.15.5",
+    "prisma": "7.10.0",
+    "tsx": "^4.20.5",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.4"
+  }
 }

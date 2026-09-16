@@ -36,6 +36,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  integrity-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: icarus
+      POSTGRES_PASSWORD: icarus
+      POSTGRES_DB: integrity
+    volumes: ["icarus-integrity-postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icarus -d integrity"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
@@ -57,7 +69,12 @@ services:
   judge0-redis:
     image: redis:7.2.4-alpine
     env_file: ./infra/judge0/judge0.conf
-    command: ["sh", "-c", "redis-server --appendonly no --requirepass $$REDIS_PASSWORD"]
+    command:
+      [
+        "sh",
+        "-c",
+        "redis-server --appendonly no --requirepass $$REDIS_PASSWORD",
+      ]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping"]
       interval: 5s
@@ -81,7 +98,12 @@ services:
       judge0-redis: { condition: service_healthy }
     restart: unless-stopped
   identity:
-    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/identity-service" } }
+    build:
+      {
+        context: .,
+        dockerfile: Dockerfile,
+        args: { WORKSPACE: "@icarus/identity-service" },
+      }
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 8000
@@ -106,7 +128,12 @@ services:
       ADMIN_APP_URL: http://localhost:3002
     depends_on: { postgres: { condition: service_healthy } }
   classroom:
-    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/classroom-service" } }
+    build:
+      {
+        context: .,
+        dockerfile: Dockerfile,
+        args: { WORKSPACE: "@icarus/classroom-service" },
+      }
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4002
@@ -117,7 +144,12 @@ services:
       classroom-postgres: { condition: service_healthy }
       identity: { condition: service_started }
   assessment:
-    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/assessment-service" } }
+    build:
+      {
+        context: .,
+        dockerfile: Dockerfile,
+        args: { WORKSPACE: "@icarus/assessment-service" },
+      }
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4003
@@ -132,7 +164,12 @@ services:
       identity: { condition: service_started }
       classroom: { condition: service_started }
   execution:
-    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/execution-service" } }
+    build:
+      {
+        context: .,
+        dockerfile: Dockerfile,
+        args: { WORKSPACE: "@icarus/execution-service" },
+      }
     environment:
       PORT: 4004
       REDIS_URL: redis://redis:6379
@@ -143,17 +180,32 @@ services:
       redis: { condition: service_healthy }
       judge0-server: { condition: service_started }
   integrity:
-    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/integrity-service" } }
+    build:
+      {
+        context: .,
+        dockerfile: Dockerfile,
+        args: { WORKSPACE: "@icarus/integrity-service" },
+      }
     environment:
       PORT: 4005
-      DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus
+      DATABASE_URL: ${INTEGRITY_DATABASE_URL:-postgres://icarus:icarus@integrity-postgres:5432/integrity}
+      IDENTITY_URL: http://identity:8000
       ASSESSMENT_URL: http://assessment:4003
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      INTEGRITY_RETENTION_DAYS: ${INTEGRITY_RETENTION_DAYS:-180}
+      MAX_EVENT_BATCH_SIZE: ${MAX_EVENT_BATCH_SIZE:-100}
+      MAX_EVENT_CLOCK_SKEW_SECONDS: ${MAX_EVENT_CLOCK_SKEW_SECONDS:-300}
     depends_on:
-      postgres: { condition: service_healthy }
+      integrity-postgres: { condition: service_healthy }
+      identity: { condition: service_started }
       assessment: { condition: service_started }
   gateway:
-    build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/api-gateway" } }
+    build:
+      {
+        context: .,
+        dockerfile: Dockerfile,
+        args: { WORKSPACE: "@icarus/api-gateway" },
+      }
     environment:
       PORT: 4000
       IDENTITY_URL: http://identity:8000
@@ -165,22 +217,26 @@ services:
     depends_on: [identity, classroom, assessment, execution, integrity]
   student:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: student } }
-    environment: { PORT: 3000, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
+    environment:
+      { PORT: 3000, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
     ports: ["3000:3000"]
     depends_on: [gateway]
   teacher:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: teacher } }
-    environment: { PORT: 3001, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
+    environment:
+      { PORT: 3001, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
     ports: ["3001:3001"]
     depends_on: [gateway]
   admin:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: admin } }
-    environment: { PORT: 3002, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
+    environment:
+      { PORT: 3002, NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1 }
     ports: ["3002:3002"]
     depends_on: [gateway]
 volumes:
   icarus-postgres:
   icarus-classroom-postgres:
   icarus-assessment-postgres:
+  icarus-integrity-postgres:
   icarus-redis:
   judge0-postgres:

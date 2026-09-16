@@ -1,0 +1,84 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EditorAction {
+  TYPE
+  PASTE
+  DELETE
+  REPLACE
+  UNDO
+  REDO
+  FOCUS_LOST
+  FOCUS_GAINED
+}
+
+enum ReportSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+model IntegritySession {
+  attemptId       String           @map("attempt_id") @db.Uuid
+  questionId      String           @map("question_id") @db.Uuid
+  studentId       String           @map("student_id") @db.Uuid
+  policy          Json
+  attemptStartedAt DateTime        @map("attempt_started_at") @db.Timestamptz(3)
+  attemptExpiresAt DateTime        @map("attempt_expires_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  events          EditorEvent[]
+  report          IntegrityReport?
+
+  @@id([attemptId, questionId])
+  @@index([studentId, updatedAt])
+  @@index([updatedAt])
+  @@map("integrity_session")
+}
+
+model EditorEvent {
+  attemptId         String           @map("attempt_id") @db.Uuid
+  questionId        String           @map("question_id") @db.Uuid
+  sequence          Int
+  occurredAt        DateTime         @map("occurred_at") @db.Timestamptz(3)
+  action            EditorAction
+  insertedCharacters Int             @map("inserted_characters")
+  deletedCharacters  Int             @map("deleted_characters")
+  documentLength    Int              @map("document_length")
+  cursorLine        Int              @map("cursor_line")
+  checksum          String           @db.VarChar(128)
+  idleMilliseconds  Int              @map("idle_milliseconds")
+  receivedAt        DateTime         @default(now()) @map("received_at") @db.Timestamptz(3)
+  session           IntegritySession @relation(fields: [attemptId, questionId], references: [attemptId, questionId], onDelete: Cascade)
+
+  @@id([attemptId, questionId, sequence])
+  @@index([attemptId, questionId, occurredAt])
+  @@index([occurredAt])
+  @@map("editor_event")
+}
+
+model IntegrityReport {
+  attemptId     String            @map("attempt_id") @db.Uuid
+  questionId    String            @map("question_id") @db.Uuid
+  eventCount    Int               @map("event_count")
+  signals       Json
+  syncStatus    ReportSyncStatus  @default(PENDING) @map("sync_status")
+  syncAttempts  Int               @default(0) @map("sync_attempts")
+  syncError     String?           @map("sync_error") @db.Text
+  analyzedAt    DateTime          @map("analyzed_at") @db.Timestamptz(3)
+  syncedAt      DateTime?         @map("synced_at") @db.Timestamptz(3)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  session       IntegritySession  @relation(fields: [attemptId, questionId], references: [attemptId, questionId], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
+  @@index([syncStatus, updatedAt])
+  @@map("integrity_report")
+}

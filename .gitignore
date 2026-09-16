@@ -30,6 +30,7 @@ dist
 services/identity/src/generated/prisma/
 services/classroom/src/generated/prisma/
 services/assessment/src/generated/prisma/
+services/integrity/src/generated/prisma/
 
 
 # Debug
