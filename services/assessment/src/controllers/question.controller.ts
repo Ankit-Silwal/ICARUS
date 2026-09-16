@@ -48,11 +48,9 @@ export class QuestionController {
 
   async create(request: Request, response: Response) {
     const input = QuestionInputSchema.parse(request.body);
-    response
-      .status(201)
-      .json({
-        question: await questionService.create(teacher(request).id, input),
-      });
+    response.status(201).json({
+      question: await questionService.create(teacher(request).id, input),
+    });
   }
 
   async previewLeetCode(request: Request, response: Response) {
