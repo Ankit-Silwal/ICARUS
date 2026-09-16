@@ -123,12 +123,17 @@ export default function TeacherDashboard() {
         {
           label: "Overview",
           active: true,
+          href: "/",
           icon: <LayoutDashboard size={17} />,
         },
         { label: "Classes", icon: <Users size={17} /> },
         { label: "Question bank", icon: <FileQuestion size={17} /> },
         { label: "Exams", icon: <BookOpenCheck size={17} /> },
-        { label: "Review & grading", icon: <ClipboardCheck size={17} /> },
+        {
+          label: "Review & grading",
+          href: "/reviews",
+          icon: <ClipboardCheck size={17} />,
+        },
       ]}
     >
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">

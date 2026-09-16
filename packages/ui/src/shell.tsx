@@ -5,6 +5,7 @@ import { AuthGate, type Role } from "./auth-gate";
 export interface NavItem {
   label: string;
   active?: boolean;
+  href?: string;
   icon: ReactNode;
 }
 
@@ -37,15 +38,20 @@ export function AppShell({
             </div>
           </div>
           <nav className="flex-1 space-y-1 px-3 py-5">
-            {navigation.map((item) => (
-              <button
-                key={item.label}
-                className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition ${item.active ? "bg-white/12 text-white" : "text-white/60 hover:bg-white/6 hover:text-white"}`}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {navigation.map((item) => {
+              const className = `flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition ${item.active ? "bg-white/12 text-white" : "text-white/60 hover:bg-white/6 hover:text-white"}`;
+              return item.href ? (
+                <a key={item.label} href={item.href} className={className}>
+                  {item.icon}
+                  <span>{item.label}</span>
+                </a>
+              ) : (
+                <button key={item.label} className={className}>
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
           <div className="border-t border-white/10 p-4">
             <div className="mb-1 text-[10px] font-semibold uppercase text-white/35">

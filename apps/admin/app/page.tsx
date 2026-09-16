@@ -63,12 +63,17 @@ export default function AdminDashboard() {
         {
           label: "Overview",
           active: true,
+          href: "/",
           icon: <LayoutDashboard size={17} />,
         },
         { label: "Teachers", icon: <GraduationCap size={17} /> },
         { label: "Students", icon: <Users size={17} /> },
         { label: "Service health", icon: <Activity size={17} /> },
-        { label: "Audit log", icon: <ShieldCheck size={17} /> },
+        {
+          label: "Integrity retention",
+          href: "/integrity",
+          icon: <ShieldCheck size={17} />,
+        },
       ]}
     >
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
