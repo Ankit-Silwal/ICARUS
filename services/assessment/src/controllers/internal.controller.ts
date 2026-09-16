@@ -19,6 +19,7 @@ const codeResultSchema = z.object({
     .loose(),
 });
 const integrityFlagsSchema = z.object({
+  questionId: z.string().uuid(),
   signals: z.array(IntegritySignalSchema).max(1000),
 });
 
@@ -69,9 +70,13 @@ export class InternalController {
     const { attemptId } = z
       .object({ attemptId: z.string().uuid() })
       .parse(request.params);
-    const { signals } = integrityFlagsSchema.parse(request.body);
+    const { questionId, signals } = integrityFlagsSchema.parse(request.body);
     response.json({
-      attempt: await attemptService.recordIntegrityFlags(attemptId, signals),
+      attempt: await attemptService.recordIntegrityFlags(
+        attemptId,
+        questionId,
+        signals,
+      ),
     });
   }
 }

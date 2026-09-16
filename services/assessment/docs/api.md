@@ -54,4 +54,4 @@ These require `Authorization: Bearer <INTERNAL_SERVICE_TOKEN>` and are not gatew
 
 - `GET /internal/attempts/:attemptId/questions/:questionId` — fetch the immutable question snapshot after checking the forwarded actor owns the attempt or exam.
 - `PATCH /internal/attempts/:attemptId/code-score` — execution callback; assessment derives the score from passed hidden test IDs.
-- `PUT /internal/attempts/:attemptId/integrity-flags` — store review signals and calculate a capped suggestion.
+- `PUT /internal/attempts/:attemptId/integrity-flags` — merge one question's review signals into the attempt and calculate a capped suggestion.

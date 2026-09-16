@@ -94,6 +94,14 @@ app.use("/api/v1/auth/internal", (_request, response) =>
 );
 app.use("/api/v1/auth", proxy(targets.auth));
 app.use("/api/v1/classrooms", authenticate, proxy(targets.classrooms));
+app.use("/api/v1/assessments/internal", (_request, response) =>
+  response.status(404).json({
+    error: {
+      code: "ROUTE_NOT_FOUND",
+      message: "The requested route does not exist.",
+    },
+  }),
+);
 app.use("/api/v1/assessments", authenticate, proxy(targets.assessments));
 app.use("/api/v1/execution", authenticate, proxy(targets.execution));
 app.use("/api/v1/integrity", authenticate, proxy(targets.integrity));

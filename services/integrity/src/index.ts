@@ -49,7 +49,11 @@ async function loadAttemptContext(
   return IntegrityPolicySchema.parse(payload.integrityPolicy);
 }
 
-async function syncSignals(attemptId: string, signals: IntegritySignal[]) {
+async function syncSignals(
+  attemptId: string,
+  questionId: string,
+  signals: IntegritySignal[],
+) {
   const response = await fetch(
     `${assessmentUrl}/internal/attempts/${attemptId}/integrity-flags`,
     {
@@ -58,7 +62,7 @@ async function syncSignals(attemptId: string, signals: IntegritySignal[]) {
         authorization: `Bearer ${internalToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ signals }),
+      body: JSON.stringify({ questionId, signals }),
       signal: AbortSignal.timeout(5_000),
     },
   );
@@ -117,7 +121,7 @@ app.get("/reports/:attemptId/:questionId", async (request, response) => {
     burstCharactersPerSecond: policy.typingSpeedCharactersPerSecond,
     idleMilliseconds: policy.idleThresholdMilliseconds,
   });
-  const assessmentSync = await syncSignals(attemptId, signals);
+  const assessmentSync = await syncSignals(attemptId, questionId, signals);
   response.json({
     report: {
       attemptId,

@@ -13,12 +13,17 @@ import { presentAttempt } from "../presenters/attempt.presenter.js";
 import { scoreMcq, scoreTestCases } from "../scoring.js";
 import type { IdentityUser } from "../types/assessment.types.js";
 import { classroomService } from "./classroom.service.js";
+import { z } from "zod";
 
 const attemptInclude = {
   answers: true,
   codeResults: true,
   exam: true,
 } as const;
+
+const storedIntegrityFlagSchema = IntegritySignalSchema.extend({
+  questionId: z.string().uuid(),
+});
 
 function parseExam(attempt: { exam: { payload: unknown; status: string } }) {
   const snapshot = ExamSchema.parse(attempt.exam.payload);
@@ -269,23 +274,43 @@ export class AttemptService {
     return presentAttempt(updated);
   }
 
-  async recordIntegrityFlags(attemptId: string, rawSignals: IntegritySignal[]) {
+  async recordIntegrityFlags(
+    attemptId: string,
+    questionId: string,
+    rawSignals: IntegritySignal[],
+  ) {
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       include: attemptInclude,
     });
     if (!attempt) throw notFound("Attempt");
+    if (
+      !parseExam(attempt).questions.some(
+        (question) => question.id === questionId,
+      )
+    ) {
+      throw notFound("Question");
+    }
     const signals = rawSignals.map((signal) =>
       IntegritySignalSchema.parse(signal),
     );
+    const existing = z
+      .array(storedIntegrityFlagSchema)
+      .safeParse(attempt.integrityFlags);
+    const flags = [
+      ...(existing.success
+        ? existing.data.filter((flag) => flag.questionId !== questionId)
+        : []),
+      ...signals.map((signal) => ({ ...signal, questionId })),
+    ];
     const percentage = recommendedIntegrityReduction(
-      signals,
+      flags,
       parseExam(attempt).integrityPolicy,
     );
     const updated = await prisma.attempt.update({
       where: { id: attemptId },
       data: {
-        integrityFlags: toJson(signals),
+        integrityFlags: toJson(flags),
         suggestedReductionPercent: percentage,
       },
       include: attemptInclude,
