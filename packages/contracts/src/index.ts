@@ -53,13 +53,15 @@ export const CodeQuestionSchema = z.object({
   points: z.number().positive(),
   functionName: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   languages: z.array(LanguageSchema).min(1),
-  starterCode: z.record(LanguageSchema, z.string()),
+  starterCode: z.partialRecord(LanguageSchema, z.string()),
   tests: z.array(TestCaseSchema).min(1),
-  source: z.object({
-    provider: z.literal("LEETCODE"),
-    problemNumber: z.number().int().positive(),
-    url: z.string().url(),
-  }).optional(),
+  source: z
+    .object({
+      provider: z.literal("LEETCODE"),
+      problemNumber: z.number().int().positive(),
+      url: z.string().url(),
+    })
+    .optional(),
 });
 
 export const QuestionSchema = z.discriminatedUnion("kind", [
@@ -74,11 +76,40 @@ export type Question = z.infer<typeof QuestionSchema>;
 export type CodeQuestion = z.infer<typeof CodeQuestionSchema>;
 
 export const ExamStatusSchema = z.enum([
-  "DRAFT", "SCHEDULED", "CLOSED", "REVIEW", "PUBLISHED",
+  "DRAFT",
+  "SCHEDULED",
+  "CLOSED",
+  "REVIEW",
+  "PUBLISHED",
 ]);
 export const AttemptStatusSchema = z.enum([
-  "CREATED", "IN_PROGRESS", "SUBMITTED", "AUTO_SUBMITTED", "GRADED",
+  "CREATED",
+  "IN_PROGRESS",
+  "SUBMITTED",
+  "AUTO_SUBMITTED",
+  "GRADED",
 ]);
+
+export const IntegrityPolicySchema = z.object({
+  enabled: z.boolean().default(true),
+  directPasteReductionPercent: z.number().min(0).max(100).default(10),
+  rapidEntryReductionPercent: z.number().min(0).max(100).default(5),
+  idleReturnReductionPercent: z.number().min(0).max(100).default(5),
+  maximumReductionPercent: z.number().min(0).max(100).default(25),
+  typingSpeedCharactersPerSecond: z.number().positive().default(25),
+  idleThresholdMilliseconds: z.number().int().positive().default(10_000),
+});
+export type IntegrityPolicy = z.infer<typeof IntegrityPolicySchema>;
+
+export const defaultIntegrityPolicy: IntegrityPolicy = {
+  enabled: true,
+  directPasteReductionPercent: 10,
+  rapidEntryReductionPercent: 5,
+  idleReturnReductionPercent: 5,
+  maximumReductionPercent: 25,
+  typingSpeedCharactersPerSecond: 25,
+  idleThresholdMilliseconds: 10_000,
+};
 
 export const ExamSchema = z.object({
   id: z.string().uuid(),
@@ -89,6 +120,7 @@ export const ExamSchema = z.object({
   durationMinutes: z.number().int().positive(),
   attemptLimit: z.number().int().positive().default(1),
   status: ExamStatusSchema,
+  integrityPolicy: IntegrityPolicySchema.default(defaultIntegrityPolicy),
   questions: z.array(QuestionSchema),
 });
 export type Exam = z.infer<typeof ExamSchema>;
@@ -108,7 +140,14 @@ export type EditorEvent = z.infer<typeof EditorEventSchema>;
 
 export const IntegritySignalSchema = z.object({
   id: z.string(),
-  kind: z.enum(["DIRECT_PASTE", "ATOMIC_INSERT", "MEGA_PASTE", "SPEED_BURST", "BULK_REPLACE", "POST_IDLE_EDIT"]),
+  kind: z.enum([
+    "DIRECT_PASTE",
+    "ATOMIC_INSERT",
+    "MEGA_PASTE",
+    "SPEED_BURST",
+    "BULK_REPLACE",
+    "POST_IDLE_EDIT",
+  ]),
   severity: z.enum(["LOW", "MEDIUM", "HIGH"]),
   sequence: z.number().int(),
   message: z.string(),
@@ -116,7 +155,11 @@ export const IntegritySignalSchema = z.object({
 export type IntegritySignal = z.infer<typeof IntegritySignalSchema>;
 
 export const ApiErrorSchema = z.object({
-  error: z.object({ code: z.string(), message: z.string(), requestId: z.string().optional() }),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    requestId: z.string().optional(),
+  }),
 });
 
 export const ScoreSchema = z.object({
