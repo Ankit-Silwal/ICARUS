@@ -1,0 +1,108 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  CLOSED
+  REVIEW
+  PUBLISHED
+}
+
+enum AttemptStatus {
+  CREATED
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  GRADED
+}
+
+model Question {
+  id        String   @id @default(uuid()) @db.Uuid
+  teacherId String   @map("teacher_id") @db.Uuid
+  kind      String   @db.VarChar(16)
+  title     String   @db.VarChar(200)
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([teacherId, createdAt])
+  @@map("question")
+}
+
+model Exam {
+  id        String       @id @default(uuid()) @db.Uuid
+  classId   String       @map("class_id") @db.Uuid
+  teacherId String       @map("teacher_id") @db.Uuid
+  title     String       @db.VarChar(200)
+  status    ExamStatus   @default(DRAFT)
+  startsAt  DateTime     @map("starts_at") @db.Timestamptz(3)
+  endsAt    DateTime     @map("ends_at") @db.Timestamptz(3)
+  payload   Json
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  attempts  Attempt[]
+
+  @@index([teacherId, createdAt])
+  @@index([classId, status, startsAt])
+  @@map("exam")
+}
+
+model Attempt {
+  id                        String          @id @default(uuid()) @db.Uuid
+  examId                    String          @map("exam_id") @db.Uuid
+  studentId                 String          @map("student_id") @db.Uuid
+  attemptNumber             Int             @map("attempt_number")
+  status                    AttemptStatus   @default(CREATED)
+  startedAt                 DateTime        @map("started_at") @db.Timestamptz(3)
+  expiresAt                 DateTime        @map("expires_at") @db.Timestamptz(3)
+  submittedAt               DateTime?       @map("submitted_at") @db.Timestamptz(3)
+  mcqScore                  Decimal         @default(0) @map("mcq_score") @db.Decimal(10, 2)
+  codeScore                 Decimal         @default(0) @map("code_score") @db.Decimal(10, 2)
+  automaticScore            Decimal         @default(0) @map("automatic_score") @db.Decimal(10, 2)
+  appliedReductionPercent   Decimal         @default(0) @map("applied_reduction_percent") @db.Decimal(5, 2)
+  suggestedReductionPercent Decimal         @default(0) @map("suggested_reduction_percent") @db.Decimal(5, 2)
+  reductionReason           String?         @map("reduction_reason") @db.Text
+  integrityFlags            Json            @default("[]") @map("integrity_flags")
+  createdAt                 DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  exam                      Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  answers                   AttemptAnswer[]
+  codeResults               CodeResult[]
+
+  @@unique([examId, studentId, attemptNumber])
+  @@index([studentId, createdAt])
+  @@index([examId, status])
+  @@map("attempt")
+}
+
+model AttemptAnswer {
+  attemptId  String   @map("attempt_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  answer     Json
+  version    Int
+  savedAt    DateTime @default(now()) @map("saved_at") @db.Timestamptz(3)
+  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
+  @@map("attempt_answer")
+}
+
+model CodeResult {
+  attemptId  String   @map("attempt_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  score      Decimal  @db.Decimal(10, 2)
+  details    Json
+  judgedAt   DateTime @default(now()) @map("judged_at") @db.Timestamptz(3)
+  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
+  @@map("code_result")
+}

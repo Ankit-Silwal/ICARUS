@@ -29,6 +29,7 @@ build
 dist
 services/identity/src/generated/prisma/
 services/classroom/src/generated/prisma/
+services/assessment/src/generated/prisma/
 
 
 # Debug

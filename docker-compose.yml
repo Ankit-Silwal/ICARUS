@@ -24,6 +24,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  assessment-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: icarus
+      POSTGRES_PASSWORD: icarus
+      POSTGRES_DB: assessment
+    volumes: ["icarus-assessment-postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icarus -d assessment"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
@@ -106,8 +118,19 @@ services:
       identity: { condition: service_started }
   assessment:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/assessment-service" } }
-    environment: { PORT: 4003, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
-    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4003
+      DATABASE_URL: ${ASSESSMENT_DATABASE_URL:-postgres://icarus:icarus@assessment-postgres:5432/assessment}
+      IDENTITY_URL: http://identity:8000
+      CLASSROOM_URL: http://classroom:4002
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      LEETCODE_API_URL: ${LEETCODE_API_URL:-https://leetcode.com/api/problems/all/}
+      LEETCODE_GRAPHQL_URL: ${LEETCODE_GRAPHQL_URL:-https://leetcode.com/graphql/}
+    depends_on:
+      assessment-postgres: { condition: service_healthy }
+      identity: { condition: service_started }
+      classroom: { condition: service_started }
   execution:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/execution-service" } }
     environment:
@@ -115,6 +138,7 @@ services:
       REDIS_URL: redis://redis:6379
       JUDGE0_URL: http://judge0-server:2358
       ASSESSMENT_URL: http://assessment:4003
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
     depends_on:
       redis: { condition: service_healthy }
       judge0-server: { condition: service_started }
@@ -151,5 +175,6 @@ services:
 volumes:
   icarus-postgres:
   icarus-classroom-postgres:
+  icarus-assessment-postgres:
   icarus-redis:
   judge0-postgres:
