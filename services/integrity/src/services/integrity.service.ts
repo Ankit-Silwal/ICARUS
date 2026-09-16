@@ -106,22 +106,24 @@ export class IntegrityService {
       const fresh = ordered.filter(
         (event) => !existingBySequence.has(event.sequence),
       );
-      const inserted = await transaction.editorEvent.createMany({
-        data: fresh.map((event) => ({
-          attemptId,
-          questionId,
-          sequence: event.sequence,
-          occurredAt: new Date(event.occurredAt),
-          action: event.action,
-          insertedCharacters: event.insertedCharacters,
-          deletedCharacters: event.deletedCharacters,
-          documentLength: event.documentLength,
-          cursorLine: event.cursorLine,
-          checksum: event.checksum,
-          idleMilliseconds: event.idleMilliseconds,
-        })),
-        skipDuplicates: true,
-      });
+      const inserted = fresh.length
+        ? await transaction.editorEvent.createMany({
+            data: fresh.map((event) => ({
+              attemptId,
+              questionId,
+              sequence: event.sequence,
+              occurredAt: new Date(event.occurredAt),
+              action: event.action,
+              insertedCharacters: event.insertedCharacters,
+              deletedCharacters: event.deletedCharacters,
+              documentLength: event.documentLength,
+              cursorLine: event.cursorLine,
+              checksum: event.checksum,
+              idleMilliseconds: event.idleMilliseconds,
+            })),
+            skipDuplicates: true,
+          })
+        : { count: 0 };
       return {
         accepted: inserted.count,
         duplicates: ordered.length - inserted.count,

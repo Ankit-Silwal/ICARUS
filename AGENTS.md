@@ -98,3 +98,9 @@ Assessment is exposed through the gateway at `/api/v1/assessments`. It owns ques
 Assessment has a separate PostgreSQL database, migration history, and Docker volume. It validates browser sessions through identity and classroom access through the classroom service. Execution and integrity use protected assessment `/internal` routes with the shared `INTERNAL_SERVICE_TOKEN`. LeetCode imports are limited to public content and starter snippets; teachers must provide test inputs, expected outputs, visibility, and per-test marks. Never claim to import LeetCode's hidden judge cases.
 
 Prisma schema changes for assessment require a committed migration under `services/assessment/prisma/migrations`. Run `npm run db:generate --workspace @icarus/assessment-service` and `npm run check-types --workspace @icarus/assessment-service`, and never create or alter assessment tables from application startup code.
+
+Integrity is exposed through the gateway at `/api/v1/integrity`. It owns raw editor events, derived reports, assessment synchronization state, and retention. Public routes are `POST /events`, teacher-only `/reports/*`, and administrator-only `DELETE /retention/expired`.
+
+Integrity has a separate PostgreSQL database, migration history, and Docker volume. It revalidates browser sessions through identity and authorizes attempt access through assessment's protected internal route. Event sequences are idempotency keys: exact retries are accepted, while conflicting reuse is rejected. Signals and suggested percentage reductions are heuristics for teacher review and must never change marks automatically.
+
+Prisma schema changes for integrity require a committed migration under `services/integrity/prisma/migrations`. Run `npm run db:generate --workspace @icarus/integrity-service` and `npm run check-types --workspace @icarus/integrity-service`, and never create or alter integrity tables from application startup code.

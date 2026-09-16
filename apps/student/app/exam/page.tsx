@@ -1,7 +1,10 @@
 "use client";
-import Editor from "@monaco-editor/react";
+import Editor, {
+  type OnChange as EditorOnChange,
+  type OnMount as EditorOnMount,
+} from "@monaco-editor/react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -32,6 +35,38 @@ const initialCode = `function twoSum(nums, target) {
 const apiUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 const questionId = "20000000-0000-4000-8000-000000000002";
+const integrityBatchSize = 100;
+
+type EditorAction =
+  | "TYPE"
+  | "PASTE"
+  | "DELETE"
+  | "REPLACE"
+  | "UNDO"
+  | "REDO"
+  | "FOCUS_LOST"
+  | "FOCUS_GAINED";
+
+interface IntegrityEvent {
+  sequence: number;
+  occurredAt: string;
+  action: EditorAction;
+  insertedCharacters: number;
+  deletedCharacters: number;
+  documentLength: number;
+  cursorLine: number;
+  checksum: string;
+  idleMilliseconds: number;
+}
+
+function documentChecksum(value: string) {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
 
 function ExamWorkspace() {
   const [question, setQuestion] = useState(2);
@@ -45,11 +80,85 @@ function ExamWorkspace() {
   const [language, setLanguage] = useState<
     "javascript" | "python" | "cpp" | "java"
   >("javascript");
-  const previousLength = useRef(initialCode.length);
   const version = useRef(1);
   const sequence = useRef(1);
-  const lastEdit = useRef(0);
+  const lastEditAt = useRef(0);
   const pastePending = useRef(false);
+  const cursorLine = useRef(1);
+  const codeRef = useRef(initialCode);
+  const attemptIdRef = useRef<string | undefined>(undefined);
+  const attemptActive = useRef(true);
+  const pendingIntegrityEvents = useRef<IntegrityEvent[]>([]);
+  const flushPromise = useRef<Promise<Response> | null>(null);
+  const focusState = useRef<"FOCUSED" | "BLURRED">("FOCUSED");
+  const hydratingCode = useRef<string | null>(null);
+
+  const queueIntegrityEvent = useCallback(
+    (
+      action: EditorAction,
+      value: string,
+      insertedCharacters = 0,
+      deletedCharacters = 0,
+    ) => {
+      if (!attemptActive.current) return;
+      const now = Date.now();
+      const isEdit = action !== "FOCUS_LOST" && action !== "FOCUS_GAINED";
+      pendingIntegrityEvents.current.push({
+        sequence: sequence.current++,
+        occurredAt: new Date(now).toISOString(),
+        action,
+        insertedCharacters,
+        deletedCharacters,
+        documentLength: value.length,
+        cursorLine: cursorLine.current,
+        checksum: documentChecksum(value),
+        idleMilliseconds:
+          isEdit && lastEditAt.current > 0 ? now - lastEditAt.current : 0,
+      });
+      if (isEdit) lastEditAt.current = now;
+    },
+    [],
+  );
+
+  const flushIntegrityEvents = useCallback(async (keepalive = false) => {
+    while (attemptIdRef.current && pendingIntegrityEvents.current.length > 0) {
+      if (flushPromise.current) {
+        if (keepalive) return;
+        await flushPromise.current.catch(() => undefined);
+        continue;
+      }
+      const activeAttemptId = attemptIdRef.current;
+      const events = pendingIntegrityEvents.current.splice(
+        0,
+        integrityBatchSize,
+      );
+      const request = fetch(`${apiUrl}/integrity/events`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          attemptId: activeAttemptId,
+          questionId,
+          events,
+        }),
+        keepalive,
+      });
+      flushPromise.current = request;
+      try {
+        const response = await request;
+        if (!response.ok) {
+          pendingIntegrityEvents.current.unshift(...events);
+          return;
+        }
+      } catch {
+        pendingIntegrityEvents.current.unshift(...events);
+        return;
+      } finally {
+        if (flushPromise.current === request) flushPromise.current = null;
+      }
+      if (keepalive) return;
+    }
+  }, []);
 
   useEffect(() => {
     const examId =
@@ -68,6 +177,8 @@ function ExamWorkspace() {
         };
       };
       setAttemptId(body.attempt.id);
+      attemptIdRef.current = body.attempt.id;
+      attemptActive.current = true;
       setSeconds(
         Math.max(
           0,
@@ -75,9 +186,56 @@ function ExamWorkspace() {
         ),
       );
       const savedCode = body.attempt.answers?.[questionId]?.answer;
-      if (typeof savedCode === "string") setCode(savedCode);
+      if (typeof savedCode === "string") {
+        hydratingCode.current = savedCode;
+        codeRef.current = savedCode;
+        setCode(savedCode);
+      }
     });
   }, []);
+
+  useEffect(() => {
+    if (!attemptId) return;
+    const timer = window.setInterval(() => {
+      void flushIntegrityEvents();
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [attemptId, flushIntegrityEvents]);
+
+  useEffect(() => {
+    if (!attemptId) return;
+    focusState.current =
+      document.visibilityState === "hidden" || !document.hasFocus()
+        ? "BLURRED"
+        : "FOCUSED";
+    const recordFocus = (next: "FOCUSED" | "BLURRED") => {
+      if (focusState.current === next) return;
+      focusState.current = next;
+      queueIntegrityEvent(
+        next === "FOCUSED" ? "FOCUS_GAINED" : "FOCUS_LOST",
+        codeRef.current,
+      );
+      if (next === "BLURRED") void flushIntegrityEvents(true);
+    };
+    const onVisibilityChange = () =>
+      recordFocus(
+        document.visibilityState === "hidden" ? "BLURRED" : "FOCUSED",
+      );
+    const onPageHide = () => void flushIntegrityEvents(true);
+    const onBlur = () => recordFocus("BLURRED");
+    const onFocus = () => recordFocus("FOCUSED");
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      void flushIntegrityEvents(true);
+    };
+  }, [attemptId, flushIntegrityEvents, queueIntegrityEvent]);
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -172,48 +330,56 @@ function ExamWorkspace() {
         version: version.current,
       }),
     });
+    attemptActive.current = false;
+    await flushIntegrityEvents();
     const response = await fetch(
       `${apiUrl}/assessments/attempts/${attemptId}/submit`,
       { method: "POST", credentials: "include" },
     );
-    if (response.ok) await execute("SUBMIT");
+    if (response.ok) {
+      await execute("SUBMIT");
+    } else {
+      attemptActive.current = true;
+    }
   };
-  const changeCode = (value = "") => {
-    const inserted = Math.max(0, value.length - previousLength.current);
-    if (inserted >= 20) setPasteCount((count) => count + 1);
-    const now = Date.now();
-    const event = {
-      sequence: sequence.current++,
-      occurredAt: new Date(now).toISOString(),
-      action: pastePending.current
-        ? "PASTE"
-        : inserted > 0 &&
-            previousLength.current > 0 &&
-            value.length === previousLength.current
-          ? "REPLACE"
-          : inserted > 0
-            ? "TYPE"
-            : "DELETE",
-      insertedCharacters: inserted,
-      deletedCharacters: Math.max(0, previousLength.current - value.length),
-      documentLength: value.length,
-      cursorLine: 1,
-      checksum: `${value.length}-${version.current}`,
-      idleMilliseconds: lastEdit.current === 0 ? 0 : now - lastEdit.current,
-    };
+  const changeCode: EditorOnChange = (value = "", change) => {
+    if (hydratingCode.current === value) {
+      hydratingCode.current = null;
+      setCode(value);
+      return;
+    }
+    hydratingCode.current = null;
+    const inserted = change.changes.reduce(
+      (total, item) => total + item.text.length,
+      0,
+    );
+    const deleted = change.changes.reduce(
+      (total, item) => total + item.rangeLength,
+      0,
+    );
+    const action: EditorAction = change.isUndoing
+      ? "UNDO"
+      : change.isRedoing
+        ? "REDO"
+        : pastePending.current
+          ? "PASTE"
+          : inserted > 0 && deleted > 0
+            ? "REPLACE"
+            : inserted > 0
+              ? "TYPE"
+              : "DELETE";
+    queueIntegrityEvent(action, value, inserted, deleted);
     pastePending.current = false;
-    lastEdit.current = now;
     version.current += 1;
-    if (attemptId)
-      void fetch(`${apiUrl}/integrity/events`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ attemptId, questionId, events: [event] }),
-      });
-    previousLength.current = value.length;
+    codeRef.current = value;
     setSaved("Saving…");
     setCode(value);
+  };
+  const mountEditor: EditorOnMount = (editor) => {
+    cursorLine.current = editor.getPosition()?.lineNumber ?? 1;
+    editor.onDidChangeCursorPosition(({ position }) => {
+      cursorLine.current = position.lineNumber;
+    });
   };
   const time = `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
@@ -387,6 +553,7 @@ function ExamWorkspace() {
                   theme="vs-dark"
                   value={code}
                   onChange={changeCode}
+                  onMount={mountEditor}
                   options={{
                     minimap: { enabled: false },
                     fontSize: 13,
