@@ -1,10 +1,9 @@
 "use client";
+
 import Editor, {
   type OnChange as EditorOnChange,
   type OnMount as EditorOnMount,
 } from "@monaco-editor/react";
-import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -13,30 +12,22 @@ import {
   Clock3,
   Code2,
   FileQuestion,
+  LoaderCircle,
   Play,
   Save,
   Send,
   ShieldCheck,
 } from "lucide-react";
-import { Button } from "@repo/ui/button";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthGate } from "@repo/ui/auth-gate";
+import { Button } from "@repo/ui/button";
 
-const initialCode = `function twoSum(nums, target) {
-  const seen = new Map();
-
-  for (let index = 0; index < nums.length; index++) {
-    const complement = target - nums[index];
-    if (seen.has(complement)) return [seen.get(complement), index];
-    seen.set(nums[index], index);
-  }
-
-  return [];
-}`;
 const apiUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
-const questionId = "20000000-0000-4000-8000-000000000002";
 const integrityBatchSize = 100;
 
+type Language = "cpp" | "java" | "python" | "javascript";
 type EditorAction =
   | "TYPE"
   | "PASTE"
@@ -46,6 +37,52 @@ type EditorAction =
   | "REDO"
   | "FOCUS_LOST"
   | "FOCUS_GAINED";
+
+interface BaseQuestion {
+  id: string;
+  title: string;
+  prompt: string;
+  points: number;
+}
+
+interface McqQuestion extends BaseQuestion {
+  kind: "MCQ";
+  options: { id: string; label: string }[];
+}
+
+interface CodeQuestion extends BaseQuestion {
+  kind: "CODE";
+  functionName: string;
+  languages: Language[];
+  starterCode: Partial<Record<Language, string>>;
+  tests: {
+    id: string;
+    label: string;
+    input: unknown;
+    expected: unknown;
+    weight: number;
+    visibility: "SAMPLE";
+  }[];
+}
+
+type Question = McqQuestion | CodeQuestion;
+
+interface Exam {
+  id: string;
+  title: string;
+  durationMinutes: number;
+  integrityPolicy: { enabled: boolean };
+  questions: Question[];
+}
+
+interface Attempt {
+  id: string;
+  expiresAt: string;
+  answers: Record<
+    string,
+    { answer?: unknown; version: number; savedAt?: string }
+  >;
+}
 
 interface IntegrityEvent {
   sequence: number;
@@ -59,6 +96,11 @@ interface IntegrityEvent {
   idleMilliseconds: number;
 }
 
+interface PendingIntegrityEvent {
+  questionId: string;
+  event: IntegrityEvent;
+}
+
 function documentChecksum(value: string) {
   let hash = 2_166_136_261;
   for (let index = 0; index < value.length; index += 1) {
@@ -68,54 +110,90 @@ function documentChecksum(value: string) {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+function languageLabel(language: Language) {
+  return {
+    cpp: "C++",
+    java: "Java",
+    python: "Python",
+    javascript: "JavaScript",
+  }[language];
+}
+
 function ExamWorkspace() {
-  const [question, setQuestion] = useState(2);
-  const [code, setCode] = useState(initialCode);
-  const [saved, setSaved] = useState("Saved just now");
+  const [exam, setExam] = useState<Exam>();
+  const [attemptId, setAttemptId] = useState<string>();
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [languages, setLanguages] = useState<Record<string, Language>>({});
+  const [saved, setSaved] = useState("Loading assessment…");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<null | "passed" | "failed">(null);
-  const [seconds, setSeconds] = useState(61 * 60 + 42);
-  const [pasteCount, setPasteCount] = useState(0);
-  const [attemptId, setAttemptId] = useState<string>();
-  const [language, setLanguage] = useState<
-    "javascript" | "python" | "cpp" | "java"
-  >("javascript");
-  const version = useRef(1);
-  const sequence = useRef(1);
-  const lastEditAt = useRef(0);
+  const [seconds, setSeconds] = useState(0);
+  const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const versions = useRef<Record<string, number>>({});
+  const dirtyQuestions = useRef(new Set<string>());
+  const sequenceByQuestion = useRef<Record<string, number>>({});
+  const lastEditAtByQuestion = useRef<Record<string, number>>({});
   const pastePending = useRef(false);
   const cursorLine = useRef(1);
-  const codeRef = useRef(initialCode);
+  const answersRef = useRef<Record<string, string>>({});
+  const activeQuestionRef = useRef<Question | undefined>(undefined);
   const attemptIdRef = useRef<string | undefined>(undefined);
   const attemptActive = useRef(true);
-  const pendingIntegrityEvents = useRef<IntegrityEvent[]>([]);
+  const integrityEnabled = useRef(false);
+  const pendingIntegrityEvents = useRef<PendingIntegrityEvent[]>([]);
   const flushPromise = useRef<Promise<Response> | null>(null);
   const focusState = useRef<"FOCUSED" | "BLURRED">("FOCUSED");
-  const hydratingCode = useRef<string | null>(null);
+
+  const activeQuestion = exam?.questions[questionIndex];
+
+  useEffect(() => {
+    activeQuestionRef.current = activeQuestion;
+  }, [activeQuestion]);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  const totalPoints = useMemo(
+    () =>
+      exam?.questions.reduce((sum, question) => sum + question.points, 0) ?? 0,
+    [exam],
+  );
 
   const queueIntegrityEvent = useCallback(
     (
+      question: CodeQuestion,
       action: EditorAction,
       value: string,
       insertedCharacters = 0,
       deletedCharacters = 0,
     ) => {
-      if (!attemptActive.current) return;
+      if (!attemptActive.current || !integrityEnabled.current) return;
       const now = Date.now();
       const isEdit = action !== "FOCUS_LOST" && action !== "FOCUS_GAINED";
+      const sequence = sequenceByQuestion.current[question.id] ?? 1;
       pendingIntegrityEvents.current.push({
-        sequence: sequence.current++,
-        occurredAt: new Date(now).toISOString(),
-        action,
-        insertedCharacters,
-        deletedCharacters,
-        documentLength: value.length,
-        cursorLine: cursorLine.current,
-        checksum: documentChecksum(value),
-        idleMilliseconds:
-          isEdit && lastEditAt.current > 0 ? now - lastEditAt.current : 0,
+        questionId: question.id,
+        event: {
+          sequence,
+          occurredAt: new Date(now).toISOString(),
+          action,
+          insertedCharacters,
+          deletedCharacters,
+          documentLength: value.length,
+          cursorLine: cursorLine.current,
+          checksum: documentChecksum(value),
+          idleMilliseconds:
+            isEdit && lastEditAtByQuestion.current[question.id]
+              ? now - lastEditAtByQuestion.current[question.id]
+              : 0,
+        },
       });
-      if (isEdit) lastEditAt.current = now;
+      sequenceByQuestion.current[question.id] = sequence + 1;
+      if (isEdit) lastEditAtByQuestion.current[question.id] = now;
     },
     [],
   );
@@ -128,9 +206,16 @@ function ExamWorkspace() {
         continue;
       }
       const activeAttemptId = attemptIdRef.current;
-      const events = pendingIntegrityEvents.current.splice(
-        0,
-        integrityBatchSize,
+      const questionId = pendingIntegrityEvents.current[0]?.questionId;
+      if (!questionId) return;
+      const batch = pendingIntegrityEvents.current
+        .filter((item) => item.questionId === questionId)
+        .slice(0, integrityBatchSize);
+      const batchSequences = new Set(batch.map((item) => item.event.sequence));
+      pendingIntegrityEvents.current = pendingIntegrityEvents.current.filter(
+        (item) =>
+          item.questionId !== questionId ||
+          !batchSequences.has(item.event.sequence),
       );
       const request = fetch(`${apiUrl}/integrity/events`, {
         method: "POST",
@@ -139,7 +224,7 @@ function ExamWorkspace() {
         body: JSON.stringify({
           attemptId: activeAttemptId,
           questionId,
-          events,
+          events: batch.map((item) => item.event),
         }),
         keepalive,
       });
@@ -147,11 +232,11 @@ function ExamWorkspace() {
       try {
         const response = await request;
         if (!response.ok) {
-          pendingIntegrityEvents.current.unshift(...events);
+          pendingIntegrityEvents.current.unshift(...batch);
           return;
         }
       } catch {
-        pendingIntegrityEvents.current.unshift(...events);
+        pendingIntegrityEvents.current.unshift(...batch);
         return;
       } finally {
         if (flushPromise.current === request) flushPromise.current = null;
@@ -161,44 +246,81 @@ function ExamWorkspace() {
   }, []);
 
   useEffect(() => {
-    const examId =
-      new URLSearchParams(window.location.search).get("examId") ??
-      "30000000-0000-4000-8000-000000000001";
-    void fetch(`${apiUrl}/assessments/exams/${examId}/start`, {
-      method: "POST",
-      credentials: "include",
-    }).then(async (response) => {
-      if (!response.ok) return;
-      const body = (await response.json()) as {
-        attempt: {
-          id: string;
-          expiresAt: string;
-          answers?: Record<string, { answer?: unknown }>;
-        };
+    const loadAssessment = async () => {
+      const examId = new URLSearchParams(window.location.search).get("examId");
+      if (!examId) {
+        throw new Error(
+          "Choose an assessment from your dashboard before opening the exam workspace.",
+        );
+      }
+      const [examResponse, attemptResponse] = await Promise.all([
+        fetch(`${apiUrl}/assessments/exams/${examId}`, {
+          credentials: "include",
+        }),
+        fetch(`${apiUrl}/assessments/exams/${examId}/start`, {
+          method: "POST",
+          credentials: "include",
+        }),
+      ]);
+      if (!examResponse.ok || !attemptResponse.ok) {
+        const failed = !attemptResponse.ok ? attemptResponse : examResponse;
+        const payload = (await failed.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(
+          payload?.error?.message ?? "The assessment could not be opened.",
+        );
+      }
+      const { exam: loadedExam } = (await examResponse.json()) as {
+        exam: Exam;
       };
-      setAttemptId(body.attempt.id);
-      attemptIdRef.current = body.attempt.id;
+      const { attempt } = (await attemptResponse.json()) as {
+        attempt: Attempt;
+      };
+      const hydratedAnswers: Record<string, string> = {};
+      const initialLanguages: Record<string, Language> = {};
+      for (const question of loadedExam.questions) {
+        const stored = attempt.answers?.[question.id];
+        versions.current[question.id] = (stored?.version ?? 0) + 1;
+        sequenceByQuestion.current[question.id] = 1;
+        if (question.kind === "CODE") {
+          const language = question.languages[0] ?? "javascript";
+          initialLanguages[question.id] = language;
+          hydratedAnswers[question.id] =
+            typeof stored?.answer === "string"
+              ? stored.answer
+              : (question.starterCode[language] ?? "");
+        } else if (typeof stored?.answer === "string") {
+          hydratedAnswers[question.id] = stored.answer;
+        }
+      }
+      setExam(loadedExam);
+      setAttemptId(attempt.id);
+      attemptIdRef.current = attempt.id;
+      integrityEnabled.current = loadedExam.integrityPolicy.enabled;
       attemptActive.current = true;
+      setAnswers(hydratedAnswers);
+      setLanguages(initialLanguages);
       setSeconds(
         Math.max(
           0,
-          Math.floor((Date.parse(body.attempt.expiresAt) - Date.now()) / 1000),
+          Math.floor((Date.parse(attempt.expiresAt) - Date.now()) / 1_000),
         ),
       );
-      const savedCode = body.attempt.answers?.[questionId]?.answer;
-      if (typeof savedCode === "string") {
-        hydratingCode.current = savedCode;
-        codeRef.current = savedCode;
-        setCode(savedCode);
-      }
-    });
+      setSaved("All answers saved");
+    };
+    void loadAssessment().catch((reason: unknown) =>
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The assessment could not be opened.",
+      ),
+    );
   }, []);
 
   useEffect(() => {
     if (!attemptId) return;
-    const timer = window.setInterval(() => {
-      void flushIntegrityEvents();
-    }, 2_000);
+    const timer = window.setInterval(() => void flushIntegrityEvents(), 2_000);
     return () => window.clearInterval(timer);
   }, [attemptId, flushIntegrityEvents]);
 
@@ -211,10 +333,14 @@ function ExamWorkspace() {
     const recordFocus = (next: "FOCUSED" | "BLURRED") => {
       if (focusState.current === next) return;
       focusState.current = next;
-      queueIntegrityEvent(
-        next === "FOCUSED" ? "FOCUS_GAINED" : "FOCUS_LOST",
-        codeRef.current,
-      );
+      const question = activeQuestionRef.current;
+      if (question?.kind === "CODE") {
+        queueIntegrityEvent(
+          question,
+          next === "FOCUSED" ? "FOCUS_GAINED" : "FOCUS_LOST",
+          answersRef.current[question.id] ?? "",
+        );
+      }
       if (next === "BLURRED") void flushIntegrityEvents(true);
     };
     const onVisibilityChange = () =>
@@ -240,13 +366,20 @@ function ExamWorkspace() {
   useEffect(() => {
     const timer = window.setInterval(
       () => setSeconds((value) => Math.max(0, value - 1)),
-      1000,
+      1_000,
     );
     return () => window.clearInterval(timer);
   }, []);
+
   useEffect(() => {
-    if (!attemptId) return;
-    const currentVersion = version.current;
+    if (
+      !attemptId ||
+      !activeQuestion ||
+      !dirtyQuestions.current.has(activeQuestion.id)
+    ) {
+      return;
+    }
+    const questionId = activeQuestion.id;
     const timer = window.setTimeout(() => {
       void fetch(`${apiUrl}/assessments/attempts/${attemptId}/autosave`, {
         method: "PUT",
@@ -254,17 +387,59 @@ function ExamWorkspace() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           questionId,
-          answer: code,
-          version: currentVersion,
+          answer: answersRef.current[questionId] ?? "",
+          version: versions.current[questionId],
         }),
-      }).then((response) =>
-        setSaved(response.ok ? "Saved just now" : "Save failed"),
-      );
+      }).then((response) => {
+        if (response.ok) dirtyQuestions.current.delete(questionId);
+        setSaved(response.ok ? "All answers saved" : "Save failed — retrying");
+      });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [attemptId, code]);
-  const execute = async (mode: "RUN" | "SUBMIT") => {
-    if (!attemptId) return;
+  }, [activeQuestion, answers, attemptId]);
+
+  const updateAnswer = (questionId: string, answer: string) => {
+    versions.current[questionId] = (versions.current[questionId] ?? 0) + 1;
+    dirtyQuestions.current.add(questionId);
+    setSaved("Saving…");
+    setAnswers((current) => ({ ...current, [questionId]: answer }));
+  };
+
+  const changeCode: EditorOnChange = (value = "", change) => {
+    if (!activeQuestion || activeQuestion.kind !== "CODE") return;
+    const inserted = change.changes.reduce(
+      (total, item) => total + item.text.length,
+      0,
+    );
+    const deleted = change.changes.reduce(
+      (total, item) => total + item.rangeLength,
+      0,
+    );
+    const action: EditorAction = change.isUndoing
+      ? "UNDO"
+      : change.isRedoing
+        ? "REDO"
+        : pastePending.current
+          ? "PASTE"
+          : inserted > 0 && deleted > 0
+            ? "REPLACE"
+            : inserted > 0
+              ? "TYPE"
+              : "DELETE";
+    queueIntegrityEvent(activeQuestion, action, value, inserted, deleted);
+    pastePending.current = false;
+    updateAnswer(activeQuestion.id, value);
+  };
+
+  const mountEditor: EditorOnMount = (editor) => {
+    cursorLine.current = editor.getPosition()?.lineNumber ?? 1;
+    editor.onDidChangeCursorPosition(({ position }) => {
+      cursorLine.current = position.lineNumber;
+    });
+  };
+
+  const execute = async (mode: "RUN" | "SUBMIT", question: CodeQuestion) => {
+    if (!attemptId) return false;
     setRunning(true);
     setResult(null);
     const response = await fetch(`${apiUrl}/execution/execute`, {
@@ -273,16 +448,20 @@ function ExamWorkspace() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         attemptId,
-        questionId,
-        language,
-        sourceCode: code,
+        questionId: question.id,
+        language: languages[question.id] ?? question.languages[0],
+        sourceCode: answersRef.current[question.id] ?? "",
         mode,
       }),
     });
     if (!response.ok) {
       setRunning(false);
       setResult("failed");
-      return;
+      return false;
+    }
+    if (mode === "SUBMIT") {
+      setRunning(false);
+      return true;
     }
     const { execution } = (await response.json()) as {
       execution: { id: string };
@@ -307,81 +486,91 @@ function ExamWorkspace() {
             : "failed",
         );
         setRunning(false);
-        return;
+        return true;
       }
-      if (body.execution.status === "failed") {
-        setResult("failed");
-        setRunning(false);
-        return;
-      }
+      if (body.execution.status === "failed") break;
     }
     setRunning(false);
     setResult("failed");
+    return false;
   };
+
   const submitExam = async () => {
-    if (!attemptId) return;
-    await fetch(`${apiUrl}/assessments/attempts/${attemptId}/autosave`, {
-      method: "PUT",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        questionId,
-        answer: code,
-        version: version.current,
-      }),
-    });
-    attemptActive.current = false;
+    if (!attemptId || !exam) return;
+    setRunning(true);
+    const saves = exam.questions
+      .filter((question) => answersRef.current[question.id] !== undefined)
+      .map((question) =>
+        fetch(`${apiUrl}/assessments/attempts/${attemptId}/autosave`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            questionId: question.id,
+            answer: answersRef.current[question.id],
+            version: versions.current[question.id],
+          }),
+        }),
+      );
+    const saveResponses = await Promise.all(saves);
+    if (saveResponses.some((response) => !response.ok)) {
+      setError("One or more answers could not be saved. Please try again.");
+      setRunning(false);
+      return;
+    }
     await flushIntegrityEvents();
     const response = await fetch(
       `${apiUrl}/assessments/attempts/${attemptId}/submit`,
       { method: "POST", credentials: "include" },
     );
-    if (response.ok) {
-      await execute("SUBMIT");
-    } else {
-      attemptActive.current = true;
-    }
-  };
-  const changeCode: EditorOnChange = (value = "", change) => {
-    if (hydratingCode.current === value) {
-      hydratingCode.current = null;
-      setCode(value);
+    if (!response.ok) {
+      setError("The assessment could not be submitted. Please try again.");
+      setRunning(false);
       return;
     }
-    hydratingCode.current = null;
-    const inserted = change.changes.reduce(
-      (total, item) => total + item.text.length,
-      0,
-    );
-    const deleted = change.changes.reduce(
-      (total, item) => total + item.rangeLength,
-      0,
-    );
-    const action: EditorAction = change.isUndoing
-      ? "UNDO"
-      : change.isRedoing
-        ? "REDO"
-        : pastePending.current
-          ? "PASTE"
-          : inserted > 0 && deleted > 0
-            ? "REPLACE"
-            : inserted > 0
-              ? "TYPE"
-              : "DELETE";
-    queueIntegrityEvent(action, value, inserted, deleted);
-    pastePending.current = false;
-    version.current += 1;
-    codeRef.current = value;
-    setSaved("Saving…");
-    setCode(value);
+    attemptActive.current = false;
+    for (const question of exam.questions) {
+      if (question.kind === "CODE" && answersRef.current[question.id]) {
+        await execute("SUBMIT", question);
+      }
+    }
+    setRunning(false);
+    setSubmitted(true);
+    setSaved("Assessment submitted");
   };
-  const mountEditor: EditorOnMount = (editor) => {
-    cursorLine.current = editor.getPosition()?.lineNumber ?? 1;
-    editor.onDidChangeCursorPosition(({ position }) => {
-      cursorLine.current = position.lineNumber;
-    });
-  };
-  const time = `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+
+  const time = `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(
+    Math.floor((seconds % 3600) / 60),
+  ).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+
+  if (error && !exam) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#F2F4F1] p-5">
+        <div className="max-w-md rounded-lg border border-[#E8C9C5] bg-white p-6">
+          <AlertCircle className="text-[#A33D32]" />
+          <h1 className="mt-3 text-lg font-bold">Unable to open assessment</h1>
+          <p className="mt-2 text-sm leading-6 text-[#68756F]">{error}</p>
+          <Link
+            className="mt-5 inline-block text-sm font-semibold text-[#176B5B]"
+            href="/"
+          >
+            Return to dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!exam || !activeQuestion) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#F2F4F1] text-sm text-[#68756F]">
+        <span className="flex items-center gap-2">
+          <LoaderCircle className="animate-spin" size={17} /> Loading
+          assessment…
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen min-h-[680px] flex-col overflow-hidden bg-[#F2F4F1] text-[#202B27]">
@@ -396,85 +585,87 @@ function ExamWorkspace() {
           </Link>
           <div className="h-6 w-px bg-white/15" />
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">
-              Arrays & Hashing · Midterm
-            </div>
+            <div className="truncate text-sm font-semibold">{exam.title}</div>
             <div className="text-[10px] text-white/45">
-              Data Structures · Section A
+              {exam.questions.length} questions · {totalPoints} marks
             </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="hidden items-center gap-2 text-xs text-white/60 sm:flex">
-            <Save size={14} />
-            <span>{saved}</span>
+            <Save size={14} /> <span>{saved}</span>
           </div>
           <div className="flex h-9 items-center gap-2 rounded-md bg-white/10 px-3 font-mono text-sm font-semibold">
-            <Clock3 size={15} className="text-[#DFF36D]" />
-            {time}
+            <Clock3 size={15} className="text-[#DFF36D]" /> {time}
           </div>
           <Button
             onClick={submitExam}
-            disabled={!attemptId || running}
+            disabled={!attemptId || running || submitted}
             className="bg-[#DFF36D] text-[#172520] hover:bg-[#D3E961]"
           >
-            <Send size={15} /> Submit exam
+            <Send size={15} /> {submitted ? "Submitted" : "Submit exam"}
           </Button>
         </div>
       </header>
+
       <div className="grid min-h-0 flex-1 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="hidden border-r border-[#D7DDD8] bg-white lg:block">
+        <aside className="hidden border-r border-[#D7DDD8] bg-white lg:flex lg:flex-col">
           <div className="border-b border-[#E5E9E5] p-4">
             <div className="text-[11px] font-bold uppercase text-[#7D8984]">
               Questions
             </div>
             <div className="mt-1 text-xs text-[#8A9591]">
-              20 marks · 2 questions
+              {totalPoints} marks · {exam.questions.length} questions
             </div>
           </div>
-          <nav className="p-3">
-            <button
-              onClick={() => setQuestion(1)}
-              className={`mb-2 flex w-full items-start gap-3 rounded-md border p-3 text-left ${question === 1 ? "border-[#AACCBF] bg-[#F0F7F4]" : "border-transparent hover:bg-[#F6F8F6]"}`}
-            >
-              <span className="grid size-7 shrink-0 place-items-center rounded bg-[#E6F3ED] text-[#176B5B]">
-                <Check size={14} />
-              </span>
-              <span>
-                <span className="block text-xs font-semibold">
-                  1. Runtime reasoning
+          <nav className="flex-1 overflow-y-auto p-3">
+            {exam.questions.map((question, index) => (
+              <button
+                key={question.id}
+                onClick={() => {
+                  setQuestionIndex(index);
+                  setResult(null);
+                }}
+                className={`mb-2 flex w-full items-start gap-3 rounded-md border p-3 text-left ${
+                  index === questionIndex
+                    ? "border-[#AACCBF] bg-[#F0F7F4]"
+                    : "border-transparent hover:bg-[#F6F8F6]"
+                }`}
+              >
+                <span
+                  className={`grid size-7 shrink-0 place-items-center rounded ${
+                    answers[question.id]
+                      ? "bg-[#E6F3ED] text-[#176B5B]"
+                      : "bg-[#EEF1EE] text-[#65716D]"
+                  }`}
+                >
+                  {answers[question.id] ? <Check size={14} /> : index + 1}
                 </span>
-                <span className="mt-1 block text-[11px] text-[#82908B]">
-                  MCQ · 4 marks
+                <span>
+                  <span className="block text-xs font-semibold">
+                    {index + 1}. {question.title}
+                  </span>
+                  <span className="mt-1 block text-[11px] text-[#82908B]">
+                    {question.kind === "CODE" ? "Coding" : "MCQ"} ·{" "}
+                    {question.points} marks
+                  </span>
                 </span>
-              </span>
-            </button>
-            <button
-              onClick={() => setQuestion(2)}
-              className={`flex w-full items-start gap-3 rounded-md border p-3 text-left ${question === 2 ? "border-[#AACCBF] bg-[#F0F7F4]" : "border-transparent hover:bg-[#F6F8F6]"}`}
-            >
-              <span className="grid size-7 shrink-0 place-items-center rounded bg-[#176B5B] text-white">
-                2
-              </span>
-              <span>
-                <span className="block text-xs font-semibold">2. Two Sum</span>
-                <span className="mt-1 block text-[11px] text-[#82908B]">
-                  Coding · 16 marks
-                </span>
-              </span>
-            </button>
+              </button>
+            ))}
           </nav>
-          <div className="absolute bottom-0 w-[279px] border-t border-[#E5E9E5] bg-[#FAFBFA] p-4">
+          <div className="border-t border-[#E5E9E5] bg-[#FAFBFA] p-4">
             <div className="flex items-start gap-2 text-[11px] leading-4 text-[#74817C]">
               <ShieldCheck size={16} className="shrink-0 text-[#176B5B]" />
               <span>
-                Editing events are retained for review. Signals never change
-                marks automatically.
+                {exam.integrityPolicy.enabled
+                  ? "Editing events are retained for review. Signals never change marks automatically."
+                  : "Integrity telemetry is disabled for this assessment."}
               </span>
             </div>
           </div>
         </aside>
-        {question === 2 ? (
+
+        {activeQuestion.kind === "CODE" ? (
           <main className="grid min-h-0 lg:grid-cols-[minmax(320px,0.8fr)_minmax(460px,1.2fr)]">
             <section className="overflow-y-auto border-r border-[#D7DDD8] bg-white p-6">
               <div className="mb-5 flex items-center justify-between">
@@ -482,162 +673,184 @@ function ExamWorkspace() {
                   <Code2 size={15} /> Coding problem
                 </span>
                 <span className="text-xs font-semibold text-[#6F7C77]">
-                  16 marks
+                  {activeQuestion.points} marks
                 </span>
               </div>
-              <h1 className="text-xl font-bold">Two Sum</h1>
-              <p className="mt-4 text-sm leading-6 text-[#53615B]">
-                Given an array of integers <code>nums</code> and an integer{" "}
-                <code>target</code>, return the indices of the two numbers whose
-                sum equals the target.
-              </p>
-              <p className="mt-3 text-sm leading-6 text-[#53615B]">
-                You may assume exactly one valid answer exists, and you may not
-                use the same element twice.
+              <h1 className="text-xl font-bold">{activeQuestion.title}</h1>
+              <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[#53615B]">
+                {activeQuestion.prompt}
               </p>
               <div className="mt-6">
                 <div className="text-xs font-bold uppercase text-[#74817C]">
-                  Function signature
+                  Function
                 </div>
                 <pre className="mt-2 overflow-x-auto rounded-md bg-[#172520] p-3 font-mono text-xs text-[#DCE9E3]">
-                  twoSum(nums: number[], target: number): number[]
+                  {activeQuestion.functionName}
                 </pre>
               </div>
-              <div className="mt-6">
-                <div className="text-xs font-bold uppercase text-[#74817C]">
-                  Sample
-                </div>
-                <div className="mt-2 rounded-md border border-[#DFE4E0] bg-[#F8F9F7] p-4 font-mono text-xs leading-6">
-                  <div>
-                    <span className="text-[#7C8984]">Input:</span> nums =
-                    [2,7,11,15], target = 9
+              {activeQuestion.tests.map((test) => (
+                <div key={test.id} className="mt-6">
+                  <div className="text-xs font-bold uppercase text-[#74817C]">
+                    {test.label}
                   </div>
-                  <div>
-                    <span className="text-[#7C8984]">Output:</span> [0,1]
+                  <div className="mt-2 rounded-md border border-[#DFE4E0] bg-[#F8F9F7] p-4 font-mono text-xs leading-6">
+                    <div>
+                      <span className="text-[#7C8984]">Input:</span>{" "}
+                      {JSON.stringify(test.input)}
+                    </div>
+                    <div>
+                      <span className="text-[#7C8984]">Expected:</span>{" "}
+                      {JSON.stringify(test.expected)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="mt-6 flex items-start gap-2 rounded-md border border-[#E7DFC5] bg-[#FFF9EA] p-3 text-xs leading-5 text-[#6E5825]">
-                <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                Hidden tests contribute 16 marks. Their inputs stay private
-                during the exam.
-              </div>
+              ))}
             </section>
             <section className="flex min-h-0 flex-col bg-[#111A17]">
-              <div className="flex h-11 shrink-0 items-center justify-between border-b border-white/10 px-3">
+              <div className="flex h-12 items-center justify-between border-b border-white/10 px-4">
                 <select
-                  aria-label="Language"
-                  value={language}
-                  onChange={(event) =>
-                    setLanguage(event.target.value as typeof language)
+                  aria-label="Programming language"
+                  value={
+                    languages[activeQuestion.id] ?? activeQuestion.languages[0]
                   }
-                  className="h-7 rounded border border-white/15 bg-[#1D2A26] px-2 text-xs text-white outline-none"
+                  onChange={(event) =>
+                    setLanguages((current) => ({
+                      ...current,
+                      [activeQuestion.id]: event.target.value as Language,
+                    }))
+                  }
+                  className="rounded border border-white/15 bg-[#1B2925] px-2 py-1 text-xs text-white"
                 >
-                  <option value="javascript">JavaScript</option>
-                  <option value="python">Python 3</option>
-                  <option value="cpp">C++17</option>
-                  <option value="java">Java 17</option>
+                  {activeQuestion.languages.map((language) => (
+                    <option key={language} value={language}>
+                      {languageLabel(language)}
+                    </option>
+                  ))}
                 </select>
-                <div className="text-[11px] text-white/40">main.js</div>
+                <Button
+                  variant="secondary"
+                  disabled={running || submitted}
+                  onClick={() => void execute("RUN", activeQuestion)}
+                  className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
+                >
+                  <Play size={14} /> {running ? "Running…" : "Run samples"}
+                </Button>
               </div>
               <div
-                onPaste={() => {
-                  pastePending.current = true;
-                  setPasteCount((count) => count + 1);
-                }}
                 className="min-h-0 flex-1"
+                onPasteCapture={() => {
+                  pastePending.current = true;
+                }}
               >
                 <Editor
+                  key={activeQuestion.id}
                   height="100%"
-                  defaultLanguage="javascript"
+                  language={
+                    languages[activeQuestion.id] ?? activeQuestion.languages[0]
+                  }
                   theme="vs-dark"
-                  value={code}
+                  value={answers[activeQuestion.id] ?? ""}
                   onChange={changeCode}
                   onMount={mountEditor}
                   options={{
                     minimap: { enabled: false },
-                    fontSize: 13,
-                    lineHeight: 21,
-                    padding: { top: 16 },
-                    scrollBeyondLastLine: false,
+                    fontSize: 14,
                     automaticLayout: true,
-                    tabSize: 2,
                   }}
                 />
               </div>
-              <div className="shrink-0 border-t border-white/10 bg-[#17211E]">
-                <div className="flex h-11 items-center justify-between px-3">
-                  <div className="text-xs text-white/50">
-                    Sample tests{" "}
-                    {pasteCount > 0 && (
-                      <span className="ml-2 text-[#E5BB62]">
-                        · {pasteCount} edit signal{pasteCount > 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="secondary"
-                      className="h-8 border-white/15 bg-transparent text-white hover:bg-white/10"
-                      onClick={() => execute("RUN")}
-                    >
-                      <Play size={14} />
-                      {running ? "Running…" : "Run sample"}
-                    </Button>
-                    <Button
-                      className="h-8"
-                      onClick={() => execute("SUBMIT")}
-                      disabled={running || !attemptId}
-                    >
-                      <Send size={14} /> Submit code
-                    </Button>
-                  </div>
-                </div>
-                {result && (
-                  <div className="flex items-center gap-3 border-t border-white/10 px-4 py-3 text-xs text-white/65">
-                    <span className="grid size-6 place-items-center rounded-full bg-[#2D856F] text-white">
-                      <Check size={13} />
-                    </span>
-                    <div>
-                      <strong className="text-white">
-                        {result === "passed" ? "Tests passed" : "Tests failed"}
-                      </strong>
-                      <div className="mt-0.5 text-white/40">2 ms · 42.1 MB</div>
-                    </div>
-                  </div>
+              <div className="flex h-12 items-center border-t border-white/10 px-4 text-xs">
+                {result === "passed" && (
+                  <span className="flex items-center gap-2 text-[#9FE2B7]">
+                    <Check size={15} /> Sample tests passed
+                  </span>
+                )}
+                {result === "failed" && (
+                  <span className="flex items-center gap-2 text-[#F2A9A0]">
+                    <AlertCircle size={15} /> One or more sample tests failed
+                  </span>
+                )}
+                {!result && (
+                  <span className="text-white/40">
+                    Run the visible samples before submitting.
+                  </span>
                 )}
               </div>
             </section>
           </main>
         ) : (
-          <main className="bg-white p-8">
-            <div className="mx-auto max-w-2xl">
-              <span className="flex items-center gap-2 text-xs font-bold uppercase text-[#176B5B]">
-                <FileQuestion size={15} /> Multiple choice
-              </span>
-              <h1 className="mt-4 text-xl font-bold">Runtime reasoning</h1>
-              <p className="mt-3 text-sm text-[#5C6964]">
-                What is the average lookup complexity of a well-distributed hash
-                table?
+          <main className="overflow-y-auto bg-white p-6 md:p-10">
+            <div className="mx-auto max-w-3xl">
+              <div className="mb-5 flex items-center justify-between">
+                <span className="flex items-center gap-2 text-xs font-bold uppercase text-[#176B5B]">
+                  <FileQuestion size={15} /> Multiple choice
+                </span>
+                <span className="text-xs font-semibold text-[#6F7C77]">
+                  {activeQuestion.points} marks
+                </span>
+              </div>
+              <h1 className="text-2xl font-bold">{activeQuestion.title}</h1>
+              <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[#53615B]">
+                {activeQuestion.prompt}
               </p>
-              <div className="mt-6 space-y-3">
-                {["O(1)", "O(log n)", "O(n)", "O(n log n)"].map((answer) => (
+              <div className="mt-8 space-y-3">
+                {activeQuestion.options.map((option) => (
                   <label
-                    key={answer}
-                    className="flex cursor-pointer items-center gap-3 rounded-md border border-[#DCE2DD] p-4 text-sm hover:border-[#83AD9D]"
+                    key={option.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 ${
+                      answers[activeQuestion.id] === option.id
+                        ? "border-[#176B5B] bg-[#F0F7F4]"
+                        : "border-[#DDE2DE] hover:bg-[#F8FAF8]"
+                    }`}
                   >
-                    <input type="radio" name="runtime" />
-                    {answer}
+                    <input
+                      type="radio"
+                      name={activeQuestion.id}
+                      value={option.id}
+                      checked={answers[activeQuestion.id] === option.id}
+                      disabled={submitted}
+                      onChange={() =>
+                        updateAnswer(activeQuestion.id, option.id)
+                      }
+                      className="mt-0.5 accent-[#176B5B]"
+                    />
+                    <span className="text-sm leading-6">{option.label}</span>
                   </label>
                 ))}
               </div>
-              <Button className="mt-6" onClick={() => setQuestion(2)}>
-                Save & next <ChevronRight size={15} />
-              </Button>
             </div>
           </main>
         )}
       </div>
+
+      <footer className="flex h-12 shrink-0 items-center justify-between border-t border-[#D7DDD8] bg-white px-4 lg:hidden">
+        <Button
+          variant="secondary"
+          disabled={questionIndex === 0}
+          onClick={() => setQuestionIndex((value) => Math.max(0, value - 1))}
+        >
+          <ChevronLeft size={14} /> Previous
+        </Button>
+        <span className="text-xs text-[#71807A]">
+          {questionIndex + 1} / {exam.questions.length}
+        </span>
+        <Button
+          variant="secondary"
+          disabled={questionIndex === exam.questions.length - 1}
+          onClick={() =>
+            setQuestionIndex((value) =>
+              Math.min(exam.questions.length - 1, value + 1),
+            )
+          }
+        >
+          Next <ChevronRight size={14} />
+        </Button>
+      </footer>
+      {error && exam && (
+        <div className="fixed bottom-5 right-5 max-w-md rounded-md border border-[#E8C9C5] bg-white p-4 text-sm text-[#A33D32] shadow-lg">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
