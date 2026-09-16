@@ -29,6 +29,7 @@ See `docs/API.md` for routes and `docs/DATABASE.md` for ownership and schema det
 Required values:
 
 - `DATABASE_URL`: PostgreSQL connection owned by the identity service.
+- `INTERNAL_SERVICE_TOKEN`: at least 32 random characters, shared only with trusted backend services such as classroom.
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: Google OAuth web-client credentials.
 - `PLATFORM_ADMIN_EMAIL`: verified Google email for the initial administrator.
 

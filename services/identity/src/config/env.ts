@@ -11,6 +11,9 @@ const envSchema = z.object({
     .default("development"),
   PORT: z.coerce.number().int().positive().default(8000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  INTERNAL_SERVICE_TOKEN: z
+    .string()
+    .min(32, "INTERNAL_SERVICE_TOKEN must be at least 32 characters"),
   GOOGLE_CLIENT_ID: z.string().min(1, "GOOGLE_CLIENT_ID is required"),
   GOOGLE_CLIENT_SECRET: z.string().min(1, "GOOGLE_CLIENT_SECRET is required"),
   PLATFORM_ADMIN_EMAIL: z.string().email(),

@@ -24,6 +24,21 @@ const publicUserSelection = {
 } as const;
 
 export class UserService {
+  async resolveByIds(ids: string[]) {
+    const uniqueIds = [...new Set(ids)];
+    return prisma.user.findMany({
+      where: { id: { in: uniqueIds } },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        role: true,
+        status: true,
+      },
+    });
+  }
+
   async bootstrapAdministrator() {
     return prisma.user.upsert({
       where: { email: env.platformAdminEmail },

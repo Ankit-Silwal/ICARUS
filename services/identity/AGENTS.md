@@ -20,6 +20,8 @@ This service owns authentication, OAuth identities, sessions, user roles and sta
 
 Controllers must remain thin. Routes must not query Prisma directly. Never trust gateway identity headers inside this service; administrator routes authenticate the opaque session cookie themselves.
 
+The protected `POST /internal/users/resolve` endpoint is the source of truth for other services that need current user identity, role, or status. It requires the shared `INTERNAL_SERVICE_TOKEN`, is blocked at the public gateway, and must never accept identity from forwarding headers alone.
+
 ## Security Rules
 
 - Google OAuth authorization code flow must use state, nonce, and PKCE.
@@ -45,4 +47,4 @@ Container startup applies committed migrations with `prisma migrate deploy`. Nev
 
 ## Routes and Environment
 
-The service listens internally on port `8000`. The gateway exposes it under `/api/v1/auth`. Keep `docs/API.md`, `docs/DATABASE.md`, `.env.example`, root `AGENTS.md`, and gateway routing synchronized whenever the contract changes.
+The service listens internally on port `8000`. The gateway exposes browser routes under `/api/v1/auth` but blocks `/api/v1/auth/internal`. Keep `docs/API.md`, `docs/DATABASE.md`, `.env.example`, root `AGENTS.md`, and gateway routing synchronized whenever the contract changes.

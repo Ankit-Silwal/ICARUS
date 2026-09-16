@@ -11,6 +11,8 @@ This is an npm/Turborepo monorepo. Application code lives in `apps/*`:
 Shared workspace packages live in `packages/*`:
 
 - `packages/ui`: shared React components exported from `src/*.tsx`.
+- `packages/contracts`: cross-service TypeScript contracts and contract tests.
+- `packages/service-kit`: common Express service bootstrap, logging, validation, and database helpers.
 - `packages/eslint-config`: shared ESLint presets.
 - `packages/typescript-config`: shared TypeScript configuration.
 
@@ -77,3 +79,16 @@ The gateway removes `/api/v1/auth` before forwarding identity requests. Current 
 - `GET /api/v1/auth/admin/audit-logs`
 
 Identity uses Google OAuth only. Secrets and college-specific values belong in `.env`, never source control. Prisma schema changes require a migration under `services/identity/prisma/migrations`; do not create or alter identity tables from application startup code.
+
+Classroom is exposed through the gateway at `/api/v1/classrooms` and owns these routes:
+
+- `GET|POST /api/v1/classrooms/classes`
+- `POST /api/v1/classrooms/classes/join`
+- `GET|DELETE /api/v1/classrooms/classes/:id`
+- `DELETE /api/v1/classrooms/classes/:id/leave`
+- `GET /api/v1/classrooms/classes/:id/students`
+- `DELETE /api/v1/classrooms/classes/:id/students/:studentId`
+
+Classroom has a completely separate PostgreSQL database, migration history, and Docker volume from identity. It stores identity UUIDs without cross-database foreign keys. The gateway validates browser sessions, and classroom independently validates the forwarded cookie through identity's `/session` endpoint. Classroom uses identity's protected `POST /internal/users/resolve` route for roster profiles; the gateway must not expose `/api/v1/auth/internal`. Keep `INTERNAL_SERVICE_TOKEN` at least 32 characters and identical in identity and classroom environments.
+
+Prisma schema changes for classroom require a committed migration under `services/classroom/prisma/migrations`. Run `npm run db:generate --workspace @icarus/classroom-service` and `npm run check-types --workspace @icarus/classroom-service`, and never create or alter classroom tables from application startup code.

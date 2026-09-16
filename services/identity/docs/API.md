@@ -14,6 +14,10 @@ All browser-facing routes use the API Gateway prefix `http://localhost:4000/api/
 
 The browser session is an opaque random token in an HTTP-only, SameSite=Lax cookie. Only its SHA-256 hash is persisted.
 
+## Internal service route
+
+`POST /internal/users/resolve` accepts `{ "ids": ["uuid"] }` and returns matching identity records. It is available only on the internal identity port and requires `Authorization: Bearer <INTERNAL_SERVICE_TOKEN>`. The classroom service uses it to resolve current enrolled-student profiles; it independently authenticates every actor through `/session`. The gateway does not expose this route under `/api/v1/auth`.
+
 ## Administrator routes
 
 All routes below require an active `ADMIN` session.

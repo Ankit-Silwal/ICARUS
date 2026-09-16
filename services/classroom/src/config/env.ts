@@ -1,0 +1,24 @@
+import { z } from "zod";
+
+const envSchema = z.object({
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
+  PORT: z.coerce.number().int().positive().default(4002),
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  IDENTITY_URL: z.string().url().default("http://localhost:8000"),
+  INTERNAL_SERVICE_TOKEN: z
+    .string()
+    .min(32, "INTERNAL_SERVICE_TOKEN must be at least 32 characters"),
+});
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  const details = parsed.error.issues
+    .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+    .join("; ");
+  throw new Error(`Invalid classroom service environment: ${details}`);
+}
+
+export const env = parsed.data;

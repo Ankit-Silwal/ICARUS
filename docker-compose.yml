@@ -12,6 +12,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  classroom-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: icarus
+      POSTGRES_PASSWORD: icarus
+      POSTGRES_DB: classroom
+    volumes: ["icarus-classroom-postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icarus -d classroom"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
@@ -62,6 +74,7 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 8000
       DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-admin@example.edu}
       PLATFORM_ADMIN_NAME: ${PLATFORM_ADMIN_NAME:-College Administrator}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -82,8 +95,15 @@ services:
     depends_on: { postgres: { condition: service_healthy } }
   classroom:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/classroom-service" } }
-    environment: { PORT: 4002, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
-    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4002
+      DATABASE_URL: ${CLASSROOM_DATABASE_URL:-postgres://icarus:icarus@classroom-postgres:5432/classroom}
+      IDENTITY_URL: http://identity:8000
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+    depends_on:
+      classroom-postgres: { condition: service_healthy }
+      identity: { condition: service_started }
   assessment:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/assessment-service" } }
     environment: { PORT: 4003, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
@@ -130,5 +150,6 @@ services:
     depends_on: [gateway]
 volumes:
   icarus-postgres:
+  icarus-classroom-postgres:
   icarus-redis:
   judge0-postgres:
