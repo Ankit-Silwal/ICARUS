@@ -207,6 +207,13 @@ export class AttemptService {
     return {
       question: QuestionSchema.parse(question),
       integrityPolicy: exam.integrityPolicy,
+      attempt: {
+        id: attempt.id,
+        studentId: attempt.studentId,
+        status: attempt.status,
+        startedAt: attempt.startedAt.toISOString(),
+        expiresAt: attempt.expiresAt.toISOString(),
+      },
     };
   }
 
