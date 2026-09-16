@@ -42,15 +42,9 @@ function teacher(request: Request) {
 export class ExamController {
   async create(request: Request, response: Response) {
     const input = createExamSchema.parse(request.body);
-    response
-      .status(201)
-      .json({
-        exam: await examService.create(
-          teacher(request),
-          cookie(request),
-          input,
-        ),
-      });
+    response.status(201).json({
+      exam: await examService.create(teacher(request), cookie(request), input),
+    });
   }
 
   async list(request: Request, response: Response) {
@@ -89,15 +83,13 @@ export class ExamController {
 
   async start(request: Request, response: Response) {
     const { examId } = examParamsSchema.parse(request.params);
-    response
-      .status(201)
-      .json({
-        attempt: await attemptService.start(
-          identity(request),
-          cookie(request),
-          examId,
-        ),
-      });
+    response.status(201).json({
+      attempt: await attemptService.start(
+        identity(request),
+        cookie(request),
+        examId,
+      ),
+    });
   }
 }
 

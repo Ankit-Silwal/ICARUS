@@ -60,9 +60,15 @@ function pythonHarness(
   source: string,
   tests: TestCase[],
 ) {
-  return `import json\n${source}\n__tests = json.loads(${JSON.stringify(JSON.stringify(tests.map(({ input, expected }) => ({ input, expected }))))})\n__results = []\nfor __test in __tests:\n    try:\n        __results.append(${question.functionName}(*__test["input"]) == __test["expected"])\n    except Exception:\n        __results.append(False)\nprint(json.dumps({"results": __results}))`;
+  const callable = /class\s+Solution\s*:/.test(source)
+    ? `Solution().${question.functionName}`
+    : question.functionName;
+  return `import json\nfrom typing import *\n${source}\n__tests = json.loads(${JSON.stringify(JSON.stringify(tests.map(({ input, expected }) => ({ input, expected }))))})\n__results = []\nfor __test in __tests:\n    try:\n        __results.append(${callable}(*__test["input"]) == __test["expected"])\n    except Exception:\n        __results.append(False)\nprint(json.dumps({"results": __results}))`;
 }
 function cppHarness(question: CodeQuestion, source: string, tests: TestCase[]) {
+  const callable = /class\s+Solution\b/.test(source)
+    ? `instance.${question.functionName}`
+    : question.functionName;
   const cases = tests
     .map((test, testIndex) => {
       const args = Array.isArray(test.input) ? test.input : [test.input];
@@ -75,16 +81,22 @@ function cppHarness(question: CodeQuestion, source: string, tests: TestCase[]) {
       const callArgs = args
         .map((_, index) => `a${testIndex}_${index}`)
         .join(",");
-      return `${declarations}\nauto r${testIndex} = ${question.functionName}(${callArgs});\nbool ok${testIndex} = (r${testIndex} == ${cppLiteral(test.expected)});`;
+      return `${declarations}\nauto r${testIndex} = ${callable}(${callArgs});\nbool ok${testIndex} = (r${testIndex} == ${cppLiteral(test.expected)});`;
     })
     .join("\n");
-  return `#include <bits/stdc++.h>\nusing namespace std;\n${source}\nint main(){\n${cases}\ncout << "{\\"results\\":[";\n${tests.map((_, index) => `if(${index}) cout << ","; cout << (ok${index} ? "true" : "false");`).join("\n")}\ncout << "]}";\nreturn 0;\n}`;
+  const instance = /class\s+Solution\b/.test(source)
+    ? "Solution instance;"
+    : "";
+  return `#include <bits/stdc++.h>\nusing namespace std;\n${source}\nint main(){\n${instance}\n${cases}\ncout << "{\\"results\\":[";\n${tests.map((_, index) => `if(${index}) cout << ","; cout << (ok${index} ? "true" : "false");`).join("\n")}\ncout << "]}";\nreturn 0;\n}`;
 }
 function javaHarness(
   question: CodeQuestion,
   source: string,
   tests: TestCase[],
 ) {
+  const instance = /class\s+Solution\b/.test(source)
+    ? "Main outer = new Main(); Main.Solution instance = outer.new Solution();"
+    : "Main instance = new Main();";
   const cases = tests
     .map((test, index) => {
       const args = (Array.isArray(test.input) ? test.input : [test.input])
@@ -94,7 +106,7 @@ function javaHarness(
       return `Object r${index} = instance.${question.functionName}(${args}); boolean ok${index} = java.util.Objects.deepEquals(r${index}, ${expected});`;
     })
     .join("\n");
-  return `import java.util.*;\npublic class Main {\n${source}\npublic static void main(String[] args) { Main instance = new Main();\n${cases}\nStringBuilder out = new StringBuilder("{\\"results\\":[");\n${tests.map((_, index) => `if(${index}>0) out.append(','); out.append(ok${index});`).join("\n")}\nout.append("]}"); System.out.print(out); }\n}`;
+  return `import java.util.*;\npublic class Main {\n${source}\npublic static void main(String[] args) { ${instance}\n${cases}\nStringBuilder out = new StringBuilder("{\\"results\\":[");\n${tests.map((_, index) => `if(${index}>0) out.append(','); out.append(ok${index});`).join("\n")}\nout.append("]}"); System.out.print(out); }\n}`;
 }
 
 export function buildHarness(

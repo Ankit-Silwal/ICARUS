@@ -144,8 +144,14 @@ services:
       judge0-server: { condition: service_started }
   integrity:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/integrity-service" } }
-    environment: { PORT: 4005, DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus }
-    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      PORT: 4005
+      DATABASE_URL: postgres://icarus:icarus@postgres:5432/icarus
+      ASSESSMENT_URL: http://assessment:4003
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+    depends_on:
+      postgres: { condition: service_healthy }
+      assessment: { condition: service_started }
   gateway:
     build: { context: ., dockerfile: Dockerfile, args: { WORKSPACE: "@icarus/api-gateway" } }
     environment:

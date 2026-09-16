@@ -179,17 +179,30 @@ export class AttemptService {
     };
   }
 
-  async getQuestion(attemptId: string, questionId: string) {
+  async getQuestion(
+    attemptId: string,
+    questionId: string,
+    actorId: string,
+    actorRole: "TEACHER" | "STUDENT",
+  ) {
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       include: { exam: true },
     });
     if (!attempt) throw notFound("Attempt");
-    const question = parseExam(attempt).questions.find(
+    const allowed =
+      (actorRole === "STUDENT" && attempt.studentId === actorId) ||
+      (actorRole === "TEACHER" && attempt.exam.teacherId === actorId);
+    if (!allowed) throw forbidden("The attempt does not belong to this user.");
+    const exam = parseExam(attempt);
+    const question = exam.questions.find(
       (candidate) => candidate.id === questionId,
     );
     if (!question) throw notFound("Question");
-    return QuestionSchema.parse(question);
+    return {
+      question: QuestionSchema.parse(question),
+      integrityPolicy: exam.integrityPolicy,
+    };
   }
 
   async recordCodeResult(

@@ -32,9 +32,23 @@ export class InternalController {
     const { attemptId, questionId } = attemptQuestionParamsSchema.parse(
       request.params,
     );
-    response.json({
-      question: await attemptService.getQuestion(attemptId, questionId),
-    });
+    const actor = z
+      .object({
+        id: z.string().uuid(),
+        role: z.enum(["TEACHER", "STUDENT"]),
+      })
+      .parse({
+        id: request.get("x-user-id"),
+        role: request.get("x-user-role"),
+      });
+    response.json(
+      await attemptService.getQuestion(
+        attemptId,
+        questionId,
+        actor.id,
+        actor.role,
+      ),
+    );
   }
 
   async recordCodeResult(request: Request, response: Response) {
