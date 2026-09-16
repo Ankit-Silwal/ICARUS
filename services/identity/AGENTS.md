@@ -33,6 +33,7 @@ The protected `POST /internal/users/resolve` endpoint is the source of truth for
 - An administrator cannot deactivate or demote their own account.
 - CSV uploads stay in memory, obey configured byte/row limits, and never contain passwords.
 - Do not log cookies, OAuth codes, tokens, client secrets, or database credentials.
+- The `POST /demo-login` helper exists only outside production for local UI verification. It must use normal opaque sessions, fixed demo identities, and an audit event; never register it when `NODE_ENV=production`.
 
 ## Database Workflow
 

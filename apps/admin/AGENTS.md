@@ -1,3 +1,11 @@
+# Administrator Integrity Retention Rules
+
+- The integrity retention route is `/integrity` and calls `DELETE /api/v1/integrity/retention/expired` only after an explicit administrator confirmation.
+- An empty cutoff delegates to the server's `INTEGRITY_RETENTION_DAYS` default. Convert a supplied local date/time to an ISO timestamp and never permit a future cutoff.
+- Clearly state that matching raw events and now-empty sessions/reports are permanently deleted, and show the returned cutoff and deletion counts after success.
+- Do not expose or accept internal service tokens in the browser.
+- Validate changes with `npm run lint --workspace admin` and `npm run build --workspace admin`, then exercise `/integrity` with a local administrator session.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

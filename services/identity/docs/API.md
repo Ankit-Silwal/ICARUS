@@ -4,15 +4,18 @@ All browser-facing routes use the API Gateway prefix `http://localhost:4000/api/
 
 ## OAuth and sessions
 
-| Method | Public path              | Authentication          | Purpose                                                                     |
-| ------ | ------------------------ | ----------------------- | --------------------------------------------------------------------------- |
-| GET    | `/oauth/google`          | None                    | Start Google OAuth. Optional `returnTo` must match a configured app origin. |
-| GET    | `/oauth/google/callback` | OAuth state             | Exchange the Google authorization code and create a session.                |
-| GET    | `/session`               | Session cookie          | Return the authenticated user. Used by the gateway.                         |
-| POST   | `/logout`                | Optional session cookie | Revoke the current session and clear its cookie.                            |
-| GET    | `/users/me`              | Session cookie          | Return the authenticated user's public profile.                             |
+| Method | Public path              | Authentication          | Purpose                                                                             |
+| ------ | ------------------------ | ----------------------- | ----------------------------------------------------------------------------------- |
+| GET    | `/oauth/google`          | None                    | Start Google OAuth. Optional `returnTo` must match a configured app origin.         |
+| GET    | `/oauth/google/callback` | OAuth state             | Exchange the Google authorization code and create a session.                        |
+| GET    | `/session`               | Session cookie          | Return the authenticated user. Used by the gateway.                                 |
+| POST   | `/demo-login`            | Development only        | Create a local `ADMIN`, `TEACHER`, or `STUDENT` session. Returns 404 in production. |
+| POST   | `/logout`                | Optional session cookie | Revoke the current session and clear its cookie.                                    |
+| GET    | `/users/me`              | Session cookie          | Return the authenticated user's public profile.                                     |
 
 The browser session is an opaque random token in an HTTP-only, SameSite=Lax cookie. Only its SHA-256 hash is persisted.
+
+`POST /demo-login` accepts `{ "role": "TEACHER" }` (or `ADMIN`/`STUDENT`) only when `NODE_ENV` is not `production`. It creates or activates a fixed local demo user, records an audit event, and uses the same hashed session mechanism as Google OAuth. It must never be enabled in production.
 
 ## Internal service route
 

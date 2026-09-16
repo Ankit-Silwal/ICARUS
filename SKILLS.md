@@ -35,7 +35,7 @@ Use this skill when the user asks to:
    - branch pushed
 
 ## Rules
-
+- work in milestones and create a focused commit after each major feature is complete and validated, instead of one large final commit
 - Never commit secrets, API keys, `.env` files, or credentials.
 - Do not use `git push --force` unless explicitly requested.
 - Do not delete or overwrite unrelated user changes.

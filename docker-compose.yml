@@ -126,6 +126,7 @@ services:
       STUDENT_APP_URL: http://localhost:3000
       TEACHER_APP_URL: http://localhost:3001
       ADMIN_APP_URL: http://localhost:3002
+    command: npm run dev:container --workspace @icarus/identity-service
     depends_on: { postgres: { condition: service_healthy } }
   classroom:
     build:
@@ -140,6 +141,7 @@ services:
       DATABASE_URL: ${CLASSROOM_DATABASE_URL:-postgres://icarus:icarus@classroom-postgres:5432/classroom}
       IDENTITY_URL: http://identity:8000
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+    command: npm run dev:container --workspace @icarus/classroom-service
     depends_on:
       classroom-postgres: { condition: service_healthy }
       identity: { condition: service_started }
@@ -159,6 +161,7 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       LEETCODE_API_URL: ${LEETCODE_API_URL:-https://leetcode.com/api/problems/all/}
       LEETCODE_GRAPHQL_URL: ${LEETCODE_GRAPHQL_URL:-https://leetcode.com/graphql/}
+    command: npm run dev:container --workspace @icarus/assessment-service
     depends_on:
       assessment-postgres: { condition: service_healthy }
       identity: { condition: service_started }
@@ -195,6 +198,7 @@ services:
       INTEGRITY_RETENTION_DAYS: ${INTEGRITY_RETENTION_DAYS:-180}
       MAX_EVENT_BATCH_SIZE: ${MAX_EVENT_BATCH_SIZE:-100}
       MAX_EVENT_CLOCK_SKEW_SECONDS: ${MAX_EVENT_CLOCK_SKEW_SECONDS:-300}
+    command: npm run dev:container --workspace @icarus/integrity-service
     depends_on:
       integrity-postgres: { condition: service_healthy }
       identity: { condition: service_started }

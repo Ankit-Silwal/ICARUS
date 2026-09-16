@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "prisma generate && prisma migrate deploy && tsx watch src/index.ts",
+    "dev:container": "prisma migrate deploy && tsx watch src/index.ts",
     "build": "prisma generate && tsc --noEmit",
     "check-types": "prisma generate && tsc --noEmit",
     "db:generate": "prisma generate",

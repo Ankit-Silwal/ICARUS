@@ -5,6 +5,7 @@ import { badRequest } from "../lib/errors.js";
 import { auditService } from "../services/audit.service.js";
 import { oauthService } from "../services/oauth.service.js";
 import { sessionService } from "../services/session.service.js";
+import { demoAuthService } from "../services/demo-auth.service.js";
 
 const callbackQuerySchema = z.object({
   code: z.string().min(1),
@@ -12,6 +13,9 @@ const callbackQuerySchema = z.object({
 });
 const authorizationQuerySchema = z.object({
   returnTo: z.string().url().optional(),
+});
+const demoLoginSchema = z.object({
+  role: z.enum(["ADMIN", "TEACHER", "STUDENT"]),
 });
 
 function metadata(request: Request) {
@@ -30,6 +34,17 @@ function cookieOptions(expiresAt: Date) {
 }
 
 export class AuthController {
+  async demoLogin(request: Request, response: Response) {
+    const { role } = demoLoginSchema.parse(request.body);
+    const result = await demoAuthService.login(role, metadata(request));
+    response.cookie(
+      env.SESSION_COOKIE_NAME,
+      result.session.token,
+      cookieOptions(result.session.expiresAt),
+    );
+    response.status(201).json({ user: result.user });
+  }
+
   async googleAuthorization(request: Request, response: Response) {
     const query = authorizationQuerySchema.parse(request.query);
     response.redirect(

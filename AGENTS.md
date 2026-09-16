@@ -39,7 +39,7 @@ Formatting is handled by Prettier. ESLint is configured per package and shared t
 
 ## Testing Guidelines
 
-No test runner is currently configured. For now, rely on `npm run lint`, `npm run check-types`, and targeted manual verification in the relevant app. When adding tests, colocate them near the code under test or add a package-level test directory, and document the new command in `package.json`.
+Vitest is configured in contracts and backend workspaces that expose a `test` script. Colocate tests with the code under test using `*.test.ts`. For integrity changes, run `npm run test --workspace @icarus/integrity-service` in addition to lint and type checks; its suite covers HTTP role enforcement, event validation, retry idempotency, synchronization failure, and retention. Next.js apps do not have a browser test runner, so run each affected app's lint and production build, then verify changed routes in the local browser.
 
 ## Commit & Pull Request Guidelines
 
@@ -66,6 +66,7 @@ The gateway removes `/api/v1/auth` before forwarding identity requests. Current 
 
 - `GET /api/v1/auth/oauth/google`
 - `GET /api/v1/auth/oauth/google/callback`
+- `POST /api/v1/auth/demo-login` (development only; absent in production)
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/users/me`
@@ -104,3 +105,9 @@ Integrity is exposed through the gateway at `/api/v1/integrity`. It owns raw edi
 Integrity has a separate PostgreSQL database, migration history, and Docker volume. It revalidates browser sessions through identity and authorizes attempt access through assessment's protected internal route. Event sequences are idempotency keys: exact retries are accepted, while conflicting reuse is rejected. Signals and suggested percentage reductions are heuristics for teacher review and must never change marks automatically.
 
 Prisma schema changes for integrity require a committed migration under `services/integrity/prisma/migrations`. Run `npm run db:generate --workspace @icarus/integrity-service` and `npm run check-types --workspace @icarus/integrity-service`, and never create or alter integrity tables from application startup code.
+
+The student exam workspace loads the sanitized assessment snapshot from assessment and keeps telemetry sequences independent per attempt/question. The teacher review UI lives at `/reviews` in `apps/teacher` and combines assessment's review queue with integrity reports and raw events. Reanalysis retries assessment synchronization. Only the assessment service may persist a teacher's explicit percentage decision; rejecting a recommendation records zero percent with a review reason. The administrator retention UI lives at `/integrity` in `apps/admin` and requires explicit confirmation before calling the destructive cleanup endpoint.
+
+Local Docker development requires a private `INTERNAL_SERVICE_TOKEN` of at least 32 characters in the ignored root `.env`; copy `.env.example` and replace its placeholder. The same value is injected into identity, classroom, assessment, execution, and integrity. Never commit the real token. Before handing off an integrity change, verify the Docker services start without token warnings, check `/health` through the relevant service/gateway path, and exercise the student, teacher, and administrator flows with development demo accounts.
+
+The shared Docker image generates a workspace's Prisma client during image build so service startup does not require engine downloads. Database-backed containers use each service's `dev:container` script to run committed migrations and then start the watcher. Keep `dev` suitable for host development and `dev:container` offline-safe; do not reintroduce `prisma generate` at container startup.
