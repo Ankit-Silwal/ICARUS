@@ -39,7 +39,7 @@ Formatting is handled by Prettier. ESLint is configured per package and shared t
 
 ## Testing Guidelines
 
-Vitest is configured in contracts and backend workspaces that expose a `test` script. Colocate tests with the code under test using `*.test.ts`. For integrity changes, run `npm run test --workspace @icarus/integrity-service` in addition to lint and type checks; its suite covers HTTP role enforcement, event validation, retry idempotency, synchronization failure, and retention. Next.js apps do not have a browser test runner, so run each affected app's lint and production build, then verify changed routes in the local browser.
+Vitest is configured in contracts and backend workspaces that expose a `test` script. Colocate tests with the code under test using `*.test.ts`. For classroom changes, run `npm run test --workspace @icarus/classroom-service`; its suite covers session and role enforcement, join idempotency, ended-class rejection, ownership, roster pagination, and unavailable identity profiles. For integrity changes, run `npm run test --workspace @icarus/integrity-service` in addition to lint and type checks; its suite covers HTTP role enforcement, event validation, retry idempotency, synchronization failure, and retention. Next.js apps do not have a browser test runner, so run each affected app's lint and production build, then verify changed routes in the local browser.
 
 ## Commit & Pull Request Guidelines
 
@@ -93,6 +93,8 @@ Classroom is exposed through the gateway at `/api/v1/classrooms` and owns these 
 Classroom has a completely separate PostgreSQL database, migration history, and Docker volume from identity. It stores identity UUIDs without cross-database foreign keys. The gateway validates browser sessions, and classroom independently validates the forwarded cookie through identity's `/session` endpoint. Classroom uses identity's protected `POST /internal/users/resolve` route for roster profiles; the gateway must not expose `/api/v1/auth/internal`. Keep `INTERNAL_SERVICE_TOKEN` at least 32 characters and identical in identity and classroom environments.
 
 Prisma schema changes for classroom require a committed migration under `services/classroom/prisma/migrations`. Run `npm run db:generate --workspace @icarus/classroom-service` and `npm run check-types --workspace @icarus/classroom-service`, and never create or alter classroom tables from application startup code.
+
+Classroom API shapes are shared through `packages/contracts/src/classroom.ts`. The teacher management UI lives at `/classes` in `apps/teacher` and owns classroom creation, code sharing, roster pagination, student removal, and confirmation-gated deletion. The student classroom UI lives at `/classes` in `apps/student` and owns eight-character code joins and confirmation-gated leaving. Keep the dashboard classroom counts and links synchronized with these pages. Before handing off a classroom change, exercise create, join, list, roster resolution, leave/remove, and delete through the gateway with the development teacher and student accounts.
 
 Assessment is exposed through the gateway at `/api/v1/assessments`. It owns question banks, exam snapshots, attempts, answers, automatic scores, and teacher-approved percentage reductions. Public route groups are `/questions`, `/exams`, `/attempts`, `/reviews`, and `/results`; the gateway must not expose `/api/v1/assessments/internal`.
 

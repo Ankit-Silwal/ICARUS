@@ -28,4 +28,8 @@ Create body:
 
 `description`, `section`, and `termEnd` are optional. Join codes contain eight unambiguous uppercase letters/digits. Joining is idempotent and ended classrooms reject new joins.
 
+Single-class operations return `{ "classroom": { ... } }`; lists return `{ "classrooms": [ ... ] }`. Classroom records include `subject`, nullable `description`, nullable `section`, `academicYear`, the generated eight-character `code`, nullable `termEnd`, timestamps, and `studentCount`.
+
+Roster responses use `{ "students": [ ... ], "nextCursor": "uuid-or-null" }`. Each entry includes `studentId`, `joinedAt`, and a current identity `user`. `user` is `null` when the identity record is unavailable so an owning teacher can still remove the enrollment by `studentId`.
+
 Errors use `{ "error": { "code", "message", "requestId" } }`.

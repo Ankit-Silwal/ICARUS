@@ -1,11 +1,15 @@
-# Student Assessment and Integrity Rules
+# Student Classroom, Assessment, and Integrity Rules
+
+- The classroom workspace lives at `/classes`. Load memberships from `GET /api/v1/classrooms/classes`, join only through `POST /classes/join` using the shared eight-character unambiguous code contract, and leave only after explicit confirmation.
+- Classroom response keys are `classroom` for one item and `classrooms` for a list. Reuse `@icarus/contracts` types and do not introduce six-character or locally incompatible classroom shapes.
+- Keep the dashboard classroom count and `/classes` navigation connected to live classroom data. Display service validation messages without exposing internal details.
 
 - The exam workspace must load the assessment snapshot and attempt from the assessment API. Do not hard-code exam IDs, question IDs, titles, prompts, options, tests, languages, marks, or starter code; the only accepted exam identifier comes from the `examId` query parameter.
 - Render both MCQ and coding questions from the sanitized student snapshot. Hidden tests and MCQ answers must never be requested, inferred, or displayed.
 - Autosave each answer with its own monotonically increasing version. Submission must flush all answers and queued integrity events before finalizing the attempt, then submit every coding answer to execution.
 - Integrity telemetry is collected only for coding questions when the immutable exam policy enables it. Sequence numbers are scoped independently to each attempt/question, exact failed batches are retried, focus transitions are recorded, and telemetry failures must never discard the student's answer.
 - Keep the disclosure that editing signals are review heuristics and never alter marks automatically.
-- Validate changes with `npm run lint --workspace student` and `npm run build --workspace student`, then exercise `/exam?examId=<scheduled-exam-uuid>` with a local student session.
+- Validate changes with `npm run lint --workspace student` and `npm run build --workspace student`, then exercise `/classes` and `/exam?examId=<scheduled-exam-uuid>` with a local student session as applicable.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

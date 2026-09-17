@@ -43,3 +43,12 @@ Container startup runs `prisma migrate deploy`. Never use `db push` for shared o
 ## Routes and Environment
 
 The service listens internally on port `4002`; the gateway exposes the routes under `/api/v1/classrooms`. Required environment values are `DATABASE_URL`, `IDENTITY_URL`, and a shared `INTERNAL_SERVICE_TOKEN` of at least 32 characters. Keep `docs/API.md`, `docs/DATABASE.md`, `.env.example`, root `AGENTS.md`, gateway routing, and Docker Compose synchronized when the contract changes.
+
+## Shared Contract, Consumers, and Verification
+
+- Public request and response schemas live in `packages/contracts/src/classroom.ts`. Reuse them instead of defining a competing join-code or classroom shape.
+- `apps/teacher/app/classes/page.tsx` is the owner-management consumer. It creates and deletes classrooms, exposes the generated code, paginates rosters, and removes enrollments.
+- `apps/student/app/classes/page.tsx` is the membership consumer. It joins by eight-character code, lists memberships, and leaves with explicit confirmation.
+- Keep response keys exactly `classroom`, `classrooms`, `students`, and `nextCursor`; frontend consumers depend on those names.
+- Run `npm run test --workspace @icarus/classroom-service`, `npm run lint --workspace @icarus/classroom-service`, and `npm run check-types --workspace @icarus/classroom-service`. Also test the shared contracts and build both consumer apps.
+- Live verification must create a disposable classroom through the gateway, join it as the demo student, resolve the teacher roster, exercise leave and teacher removal, and delete the disposable classroom.
