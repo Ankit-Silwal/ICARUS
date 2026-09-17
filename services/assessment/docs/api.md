@@ -25,6 +25,8 @@ Coding questions require at least one hidden case. Each test has `input`, `expec
 
 An exam copies question payloads when it is created. Students never receive MCQ answers or hidden test cases.
 
+New exams begin as drafts. Scheduling makes an exam eligible to start only inside its configured window. Closing moves it to review; publishing is allowed only after close and makes results visible to students. Expired in-progress attempts are recorded as auto-submitted when assessment next evaluates them.
+
 The optional `integrityPolicy` on exam creation contains:
 
 ```json
@@ -40,6 +42,8 @@ The optional `integrityPolicy` on exam creation contains:
 ```
 
 ## Attempts and review
+
+Submitting an attempt scores MCQs and finalizes it. If its expiry has passed, assessment records it as `AUTO_SUBMITTED`. Autosaves are versioned and idempotent; code scores are derived later from execution's passed hidden-test IDs.
 
 - `PUT /attempts/:attemptId/autosave` — versioned/idempotent answer save.
 - `POST /attempts/:attemptId/submit` — score MCQs and finalize the attempt.

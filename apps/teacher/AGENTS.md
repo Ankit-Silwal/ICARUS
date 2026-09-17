@@ -5,11 +5,16 @@
 - Reuse the classroom shapes from `@icarus/contracts`; list responses use `classrooms`, single-item responses use `classroom`, and roster pagination uses `students` plus `nextCursor`.
 - Keep dashboard classroom totals and the Classes navigation linked to live classroom data.
 
+- Question-bank authoring lives at `/questions`. Support MCQ and coding creation, owned updates, and deletion through assessment; validate that MCQs have one correct option and that coding sample weights are zero while hidden weights total the question marks.
+- LeetCode preview may populate only public statement metadata and starter snippets. Keep the notice that teachers must author every test input, expected output, visibility, and mark allocation.
+- Exam authoring lives at `/exams`. Create immutable snapshots from selected bank questions, show their question and point totals, and use explicit actions for schedule, close for review, and publish. Never imply that editing a bank question changes an existing exam.
+- Publishing results requires explicit confirmation. Do not add client-only status transitions or bypass the assessment service lifecycle.
+
 - The integrity review route is `/reviews`. Load the queue from `GET /api/v1/assessments/reviews`, reports from `/api/v1/integrity/reports/*`, and raw evidence through the paginated events route.
 - Always show assessment synchronization state and errors. Reanalysis must use the integrity reanalyze endpoint so the current analyzer runs and assessment synchronization is retried.
 - Signals and suggested reductions are advisory. Never apply a suggestion on page load or reanalysis. A teacher must explicitly approve a percentage with a reason or reject it; rejection is persisted through assessment as zero percent with a review reason.
 - Preserve the evidence disclaimer and display raw events read-only. Do not label heuristic signals as cheating or misconduct.
-- Validate changes with `npm run lint --workspace teacher` and `npm run build --workspace teacher`, then exercise `/classes` and `/reviews` with a local teacher session as applicable.
+- Validate changes with `npm run lint --workspace teacher` and `npm run build --workspace teacher`, then exercise `/classes`, `/questions`, `/exams`, and `/reviews` with a local teacher session as applicable.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

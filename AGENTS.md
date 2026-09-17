@@ -39,11 +39,11 @@ Formatting is handled by Prettier. ESLint is configured per package and shared t
 
 ## Testing Guidelines
 
-Vitest is configured in contracts and backend workspaces that expose a `test` script. Colocate tests with the code under test using `*.test.ts`. For classroom changes, run `npm run test --workspace @icarus/classroom-service`; its suite covers session and role enforcement, join idempotency, ended-class rejection, ownership, roster pagination, and unavailable identity profiles. For integrity changes, run `npm run test --workspace @icarus/integrity-service` in addition to lint and type checks; its suite covers HTTP role enforcement, event validation, retry idempotency, synchronization failure, and retention. Next.js apps do not have a browser test runner, so run each affected app's lint and production build, then verify changed routes in the local browser.
+Vitest is configured in contracts and backend workspaces that expose a `test` script. Colocate tests with the code under test using `*.test.ts`. For classroom changes, run `npm run test --workspace @icarus/classroom-service`; its suite covers session and role enforcement, join idempotency, ended-class rejection, ownership, roster pagination, and unavailable identity profiles. For assessment changes, run `npm run test --workspace @icarus/assessment-service` and `npm run test --workspace @icarus/contracts`; the HTTP suite covers role enforcement, ownership, snapshot sanitization, answer versioning, score derivation, and explicit review decisions. For integrity changes, run `npm run test --workspace @icarus/integrity-service` in addition to lint and type checks; its suite covers HTTP role enforcement, event validation, retry idempotency, synchronization failure, and retention. Next.js apps do not have a browser test runner, so run each affected app's lint and production build, then verify changed routes in the local browser.
 
 ## Commit & Pull Request Guidelines
 
-This repository has no existing commit history, so use concise, imperative commit messages such as `Add shared card component` or `Fix admin layout spacing`. Keep changes scoped to one concern.
+Use concise, imperative commit messages such as `Add shared card component` or `Fix admin layout spacing`. Keep changes scoped to one concern.
 
 Pull requests should include a short summary, validation steps run, linked issues when applicable, and screenshots or recordings for visible UI changes.
 
@@ -101,6 +101,10 @@ Assessment is exposed through the gateway at `/api/v1/assessments`. It owns ques
 Assessment has a separate PostgreSQL database, migration history, and Docker volume. It validates browser sessions through identity and classroom access through the classroom service. Execution and integrity use protected assessment `/internal` routes with the shared `INTERNAL_SERVICE_TOKEN`. LeetCode imports are limited to public content and starter snippets; teachers must provide test inputs, expected outputs, visibility, and per-test marks. Never claim to import LeetCode's hidden judge cases.
 
 Prisma schema changes for assessment require a committed migration under `services/assessment/prisma/migrations`. Run `npm run db:generate --workspace @icarus/assessment-service` and `npm run check-types --workspace @icarus/assessment-service`, and never create or alter assessment tables from application startup code.
+
+Assessment API shapes shared by services and browser apps belong in `packages/contracts`. Teacher assessment authoring lives at `/questions` and `/exams` in `apps/teacher`; student discovery, the active workspace, and published results live at `/exams`, `/exam?examId=<uuid>`, and `/results` in `apps/student`. Draft exams snapshot question-bank payloads at creation. Only scheduled exams inside their time window can start attempts; closing moves an exam to review, and publishing exposes results. Student snapshots must omit MCQ answers and hidden tests. On timeout the student client follows the normal save, telemetry flush, attempt submission, and code submission path; assessment records an expired attempt as auto-submitted.
+
+Before handing off an assessment change, exercise the full gateway flow with development teacher and student accounts: create and update a question, create and schedule an exam, start and autosave an attempt, submit and score it, apply an explicit review decision, close and publish the exam, and read the student's published result. Also confirm the assessment database migration and indexes, the teacher `/questions` and `/exams` routes, and the student `/exams`, `/exam`, and `/results` routes.
 
 Integrity is exposed through the gateway at `/api/v1/integrity`. It owns raw editor events, derived reports, assessment synchronization state, and retention. Public routes are `POST /events`, teacher-only `/reports/*`, and administrator-only `DELETE /retention/expired`.
 
