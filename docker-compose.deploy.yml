@@ -1,0 +1,202 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports: !reset []
+    restart: unless-stopped
+
+  classroom-postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports: !reset []
+    restart: unless-stopped
+
+  assessment-postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports: !reset []
+    restart: unless-stopped
+
+  integrity-postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports: !reset []
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+
+  judge0-db:
+    restart: unless-stopped
+
+  judge0-redis:
+    restart: unless-stopped
+
+  identity:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: "@icarus/identity-service"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://icarus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/icarus
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:?Set PLATFORM_ADMIN_EMAIL}
+      PLATFORM_ADMIN_NAME: ${PLATFORM_ADMIN_NAME:-College Administrator}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET}
+      ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:?Set ALLOWED_EMAIL_DOMAINS}
+      STUDENT_SELF_REGISTRATION: ${STUDENT_SELF_REGISTRATION:-false}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-icarus_session}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-8}
+      OAUTH_STATE_TTL_MINUTES: ${OAUTH_STATE_TTL_MINUTES:-10}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:?Set COOKIE_DOMAIN}
+      COOKIE_SECURE: "true"
+      MAX_TEACHER_IMPORT_ROWS: ${MAX_TEACHER_IMPORT_ROWS:-2000}
+      MAX_TEACHER_IMPORT_BYTES: ${MAX_TEACHER_IMPORT_BYTES:-2000000}
+      PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}
+      STUDENT_APP_URL: https://${STUDENT_DOMAIN:?Set STUDENT_DOMAIN}
+      TEACHER_APP_URL: https://${TEACHER_DOMAIN:?Set TEACHER_DOMAIN}
+      ADMIN_APP_URL: https://${ADMIN_DOMAIN:?Set ADMIN_DOMAIN}
+      WEB_ORIGINS: https://${STUDENT_DOMAIN},https://${TEACHER_DOMAIN},https://${ADMIN_DOMAIN}
+    command: npm run start:container --workspace @icarus/identity-service
+    restart: unless-stopped
+
+  classroom:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: "@icarus/classroom-service"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://icarus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@classroom-postgres:5432/classroom
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      WEB_ORIGINS: https://${STUDENT_DOMAIN},https://${TEACHER_DOMAIN},https://${ADMIN_DOMAIN}
+    command: npm run start:container --workspace @icarus/classroom-service
+    restart: unless-stopped
+
+  assessment:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: "@icarus/assessment-service"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://icarus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@assessment-postgres:5432/assessment
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      WEB_ORIGINS: https://${STUDENT_DOMAIN},https://${TEACHER_DOMAIN},https://${ADMIN_DOMAIN}
+    command: npm run start:container --workspace @icarus/assessment-service
+    restart: unless-stopped
+
+  execution:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: "@icarus/execution-service"
+    environment:
+      NODE_ENV: production
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      EXECUTION_CONCURRENCY: ${EXECUTION_CONCURRENCY:-2}
+      WEB_ORIGINS: https://${STUDENT_DOMAIN},https://${TEACHER_DOMAIN},https://${ADMIN_DOMAIN}
+    command: npm run start --workspace @icarus/execution-service
+    restart: unless-stopped
+
+  integrity:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: "@icarus/integrity-service"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://icarus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@integrity-postgres:5432/integrity
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      WEB_ORIGINS: https://${STUDENT_DOMAIN},https://${TEACHER_DOMAIN},https://${ADMIN_DOMAIN}
+    command: npm run start:container --workspace @icarus/integrity-service
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: "@icarus/api-gateway"
+    environment:
+      NODE_ENV: production
+      WEB_ORIGINS: https://${STUDENT_DOMAIN},https://${TEACHER_DOMAIN},https://${ADMIN_DOMAIN}
+    command: npm run start --workspace @icarus/api-gateway
+    ports: !reset []
+    restart: unless-stopped
+
+  student:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: student
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}/api/v1
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}/api/v1
+    command: npm run start --workspace student
+    ports: !reset []
+    restart: unless-stopped
+
+  teacher:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: teacher
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}/api/v1
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}/api/v1
+    command: npm run start --workspace teacher
+    ports: !reset []
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        WORKSPACE: admin
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}/api/v1
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN}/api/v1
+    command: npm run start --workspace admin
+    ports: !reset []
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
+      STUDENT_DOMAIN: ${STUDENT_DOMAIN:?Set STUDENT_DOMAIN}
+      TEACHER_DOMAIN: ${TEACHER_DOMAIN:?Set TEACHER_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set ADMIN_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - gateway
+      - student
+      - teacher
+      - admin
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

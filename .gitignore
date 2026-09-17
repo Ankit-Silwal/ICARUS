@@ -11,6 +11,8 @@ node_modules
 .env.development.local
 .env.test.local
 .env.production.local
+.env.staging
+.env.production
 infra/judge0/judge0.conf
 
 # Testing

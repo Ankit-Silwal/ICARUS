@@ -5,6 +5,7 @@ import { z } from "zod";
 import { CodeQuestionSchema, type CodeQuestion } from "@icarus/contracts";
 import { actor, createService, listen, validate } from "@icarus/service-kit";
 import { buildHarness } from "./harness.js";
+import { assertJudgeInfrastructureHealthy } from "./judge.js";
 
 const app = createService("execution");
 const requestSchema = z.object({
@@ -116,6 +117,7 @@ async function processExecution(job: Job<ExecutionJob>) {
     .parse(await response.json());
   await job.updateProgress(35);
   const judge = await waitForJudge(token);
+  assertJudgeInfrastructureHealthy(judge.status);
   let passed: boolean[] = [];
   if (judge.status.id === 3 && judge.stdout) {
     const stdout = Buffer.from(judge.stdout, "base64").toString("utf8").trim();

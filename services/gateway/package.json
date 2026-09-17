@@ -1,6 +1,24 @@
 {
-  "name": "@icarus/api-gateway", "version": "0.1.0", "private": true, "type": "module",
-  "scripts": { "dev": "tsx watch src/index.ts", "build": "tsc --noEmit", "check-types": "tsc --noEmit", "lint": "eslint src --max-warnings 0" },
-  "dependencies": { "@icarus/service-kit": "*", "cookie-parser": "^1.4.7" },
-  "devDependencies": { "@repo/eslint-config": "*", "@repo/typescript-config": "*", "@types/cookie-parser": "^1.4.9", "tsx": "^4.20.5", "typescript": "5.9.3" }
+  "name": "@icarus/api-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src --max-warnings 0"
+  },
+  "dependencies": {
+    "@icarus/service-kit": "*",
+    "cookie-parser": "^1.4.7"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "@types/cookie-parser": "^1.4.9",
+    "tsx": "^4.20.5",
+    "typescript": "5.9.3"
+  }
 }

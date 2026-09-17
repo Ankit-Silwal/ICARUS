@@ -1,0 +1,19 @@
+{$API_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy gateway:4000
+}
+
+{$STUDENT_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy student:3000
+}
+
+{$TEACHER_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy teacher:3001
+}
+
+{$ADMIN_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy admin:3002
+}
