@@ -1,4 +1,5 @@
 "use client";
+import type { Classroom } from "@icarus/contracts";
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
@@ -31,11 +32,14 @@ const apiUrl =
 export default function TeacherDashboard() {
   const [modal, setModal] = useState(false);
   const [exams, setExams] = useState<ExamRow[]>([]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   useEffect(() => {
-    void fetch(`${apiUrl}/assessments/exams`, { credentials: "include" }).then(
-      async (response) => {
-        if (!response.ok) return;
-        const body = (await response.json()) as {
+    void Promise.all([
+      fetch(`${apiUrl}/assessments/exams`, { credentials: "include" }),
+      fetch(`${apiUrl}/classrooms/classes`, { credentials: "include" }),
+    ]).then(async ([examResponse, classroomResponse]) => {
+      if (examResponse.ok) {
+        const body = (await examResponse.json()) as {
           exams: {
             title: string;
             classId: string;
@@ -57,8 +61,14 @@ export default function TeacherDashboard() {
             status: exam.status[0] + exam.status.slice(1).toLowerCase(),
           })),
         );
-      },
-    );
+      }
+      if (classroomResponse.ok) {
+        const body = (await classroomResponse.json()) as {
+          classrooms: Classroom[];
+        };
+        setClassrooms(body.classrooms);
+      }
+    });
   }, []);
   const createQuestion = async () => {
     const payload = {
@@ -126,7 +136,7 @@ export default function TeacherDashboard() {
           href: "/",
           icon: <LayoutDashboard size={17} />,
         },
-        { label: "Classes", icon: <Users size={17} /> },
+        { label: "Classes", href: "/classes", icon: <Users size={17} /> },
         { label: "Question bank", icon: <FileQuestion size={17} /> },
         { label: "Exams", icon: <BookOpenCheck size={17} /> },
         {
@@ -158,8 +168,8 @@ export default function TeacherDashboard() {
       <Card className="mb-6 grid grid-cols-2 py-5 lg:grid-cols-4">
         <Metric
           label="Active classes"
-          value="4"
-          detail="128 enrolled students"
+          value={String(classrooms.length)}
+          detail={`${classrooms.reduce((sum, classroom) => sum + classroom.studentCount, 0)} enrolled students`}
           icon={<GraduationCap size={18} />}
         />
         <Metric
