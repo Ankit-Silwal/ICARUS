@@ -146,6 +146,7 @@ function ExamWorkspace() {
   const pendingIntegrityEvents = useRef<PendingIntegrityEvent[]>([]);
   const flushPromise = useRef<Promise<Response> | null>(null);
   const focusState = useRef<"FOCUSED" | "BLURRED">("FOCUSED");
+  const timeoutSubmissionStarted = useRef(false);
 
   const activeQuestion = exam?.questions[questionIndex];
 
@@ -438,64 +439,67 @@ function ExamWorkspace() {
     });
   };
 
-  const execute = async (mode: "RUN" | "SUBMIT", question: CodeQuestion) => {
-    if (!attemptId) return false;
-    setRunning(true);
-    setResult(null);
-    const response = await fetch(`${apiUrl}/execution/execute`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        attemptId,
-        questionId: question.id,
-        language: languages[question.id] ?? question.languages[0],
-        sourceCode: answersRef.current[question.id] ?? "",
-        mode,
-      }),
-    });
-    if (!response.ok) {
-      setRunning(false);
-      setResult("failed");
-      return false;
-    }
-    if (mode === "SUBMIT") {
-      setRunning(false);
-      return true;
-    }
-    const { execution } = (await response.json()) as {
-      execution: { id: string };
-    };
-    for (let poll = 0; poll < 60; poll += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 500));
-      const statusResponse = await fetch(
-        `${apiUrl}/execution/executions/${execution.id}`,
-        { credentials: "include" },
-      );
-      if (!statusResponse.ok) continue;
-      const body = (await statusResponse.json()) as {
-        execution: {
-          status: string;
-          result?: { cases: { passed: boolean }[] };
-        };
-      };
-      if (body.execution.status === "completed") {
-        setResult(
-          body.execution.result?.cases.every((test) => test.passed)
-            ? "passed"
-            : "failed",
-        );
+  const execute = useCallback(
+    async (mode: "RUN" | "SUBMIT", question: CodeQuestion) => {
+      if (!attemptId) return false;
+      setRunning(true);
+      setResult(null);
+      const response = await fetch(`${apiUrl}/execution/execute`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          attemptId,
+          questionId: question.id,
+          language: languages[question.id] ?? question.languages[0],
+          sourceCode: answersRef.current[question.id] ?? "",
+          mode,
+        }),
+      });
+      if (!response.ok) {
+        setRunning(false);
+        setResult("failed");
+        return false;
+      }
+      if (mode === "SUBMIT") {
         setRunning(false);
         return true;
       }
-      if (body.execution.status === "failed") break;
-    }
-    setRunning(false);
-    setResult("failed");
-    return false;
-  };
+      const { execution } = (await response.json()) as {
+        execution: { id: string };
+      };
+      for (let poll = 0; poll < 60; poll += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        const statusResponse = await fetch(
+          `${apiUrl}/execution/executions/${execution.id}`,
+          { credentials: "include" },
+        );
+        if (!statusResponse.ok) continue;
+        const body = (await statusResponse.json()) as {
+          execution: {
+            status: string;
+            result?: { cases: { passed: boolean }[] };
+          };
+        };
+        if (body.execution.status === "completed") {
+          setResult(
+            body.execution.result?.cases.every((test) => test.passed)
+              ? "passed"
+              : "failed",
+          );
+          setRunning(false);
+          return true;
+        }
+        if (body.execution.status === "failed") break;
+      }
+      setRunning(false);
+      setResult("failed");
+      return false;
+    },
+    [attemptId, languages],
+  );
 
-  const submitExam = async () => {
+  const submitExam = useCallback(async () => {
     if (!attemptId || !exam) return;
     setRunning(true);
     const saves = exam.questions
@@ -537,7 +541,20 @@ function ExamWorkspace() {
     setRunning(false);
     setSubmitted(true);
     setSaved("Assessment submitted");
-  };
+  }, [attemptId, exam, execute, flushIntegrityEvents]);
+
+  useEffect(() => {
+    if (
+      !attemptId ||
+      seconds !== 0 ||
+      submitted ||
+      timeoutSubmissionStarted.current
+    ) {
+      return;
+    }
+    timeoutSubmissionStarted.current = true;
+    void submitExam();
+  }, [attemptId, seconds, submitExam, submitted]);
 
   const time = `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(
     Math.floor((seconds % 3600) / 60),

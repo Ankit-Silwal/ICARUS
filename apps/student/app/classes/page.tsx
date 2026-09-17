@@ -117,8 +117,8 @@ export default function StudentClassesPage() {
           active: true,
           icon: <Users size={17} />,
         },
-        { label: "Exams", icon: <BookOpenCheck size={17} /> },
-        { label: "Results", icon: <Award size={17} /> },
+        { label: "Exams", href: "/exams", icon: <BookOpenCheck size={17} /> },
+        { label: "Results", href: "/results", icon: <Award size={17} /> },
       ]}
     >
       <div className="mb-7">
