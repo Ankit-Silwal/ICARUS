@@ -12,16 +12,6 @@ export const UserSchema = z.object({
 });
 export type User = z.infer<typeof UserSchema>;
 
-export const ClassRoomSchema = z.object({
-  id: z.string().uuid(),
-  teacherId: z.string().uuid(),
-  name: z.string().min(2).max(100),
-  code: z.string().length(6),
-  termEnd: z.string().datetime(),
-  studentCount: z.number().int().nonnegative().default(0),
-});
-export type ClassRoom = z.infer<typeof ClassRoomSchema>;
-
 export const LanguageSchema = z.enum(["cpp", "java", "python", "javascript"]);
 export type Language = z.infer<typeof LanguageSchema>;
 
@@ -185,3 +175,4 @@ export const ScoreSchema = z.object({
 export type Score = z.infer<typeof ScoreSchema>;
 
 export * from "./integrity.js";
+export * from "./classroom.js";

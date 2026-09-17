@@ -1,23 +1,12 @@
+import {
+  CreateClassroomInputSchema,
+  JoinClassroomInputSchema,
+} from "@icarus/contracts";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { forbidden, unauthenticated } from "../lib/errors.js";
 import { classroomService } from "../services/classroom.service.js";
 
-const createSchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  subject: z.string().trim().min(2).max(120),
-  description: z.string().trim().max(2000).optional(),
-  section: z.string().trim().min(1).max(80).optional(),
-  academicYear: z.string().trim().min(4).max(40),
-  termEnd: z.iso.datetime().optional(),
-});
-const joinSchema = z.object({
-  code: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-HJ-NP-Z2-9]{8}$/, "Enter a valid 8-character classroom code."),
-});
 const idParamsSchema = z.object({ id: z.string().uuid() });
 const studentParamsSchema = z.object({
   id: z.string().uuid(),
@@ -48,7 +37,7 @@ function requireRole(request: Request, role: "TEACHER" | "STUDENT") {
 export class ClassroomController {
   async create(request: Request, response: Response) {
     const actor = requireRole(request, "TEACHER");
-    const input = createSchema.parse(request.body);
+    const input = CreateClassroomInputSchema.parse(request.body);
     response.status(201).json({
       classroom: await classroomService.create(actor.id, input),
     });
@@ -76,7 +65,7 @@ export class ClassroomController {
 
   async join(request: Request, response: Response) {
     const actor = requireRole(request, "STUDENT");
-    const { code } = joinSchema.parse(request.body);
+    const { code } = JoinClassroomInputSchema.parse(request.body);
     response.status(201).json({
       classroom: await classroomService.join(actor.id, code),
     });

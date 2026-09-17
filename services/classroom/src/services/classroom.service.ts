@@ -1,19 +1,11 @@
 import { randomBytes } from "node:crypto";
+import type { CreateClassroomInput } from "@icarus/contracts";
 import { conflict, forbidden, notFound } from "../lib/errors.js";
 import { prisma } from "../lib/prisma.js";
 import type { IdentityUser } from "../types/classroom.types.js";
 import { identityService } from "./identity.service.js";
 
 const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-export interface CreateClassroomInput {
-  name: string;
-  subject: string;
-  description?: string;
-  section?: string;
-  academicYear: string;
-  termEnd?: string;
-}
 
 function generateJoinCode() {
   const bytes = randomBytes(8);
