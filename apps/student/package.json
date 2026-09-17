@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@icarus/contracts": "*",
     "@monaco-editor/react": "^4.7.0",
     "@repo/ui": "*",
     "lucide-react": "^0.542.0",

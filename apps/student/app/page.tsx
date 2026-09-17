@@ -1,4 +1,5 @@
 "use client";
+import type { Classroom } from "@icarus/contracts";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
@@ -28,9 +29,11 @@ const apiUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 export default function StudentDashboard() {
-  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [classes, setClasses] = useState<Classroom[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
   const [code, setCode] = useState("");
+  const [joinError, setJoinError] = useState("");
+  const [joining, setJoining] = useState(false);
   useEffect(() => {
     void Promise.all([
       fetch(`${apiUrl}/classrooms/classes`, { credentials: "include" }),
@@ -40,9 +43,9 @@ export default function StudentDashboard() {
         setClasses(
           (
             (await classResponse.json()) as {
-              classes: { id: string; name: string }[];
+              classrooms: Classroom[];
             }
-          ).classes,
+          ).classrooms,
         );
       if (examResponse.ok)
         setExams(
@@ -52,6 +55,8 @@ export default function StudentDashboard() {
   }, []);
   const joinClass = async (event: React.FormEvent) => {
     event.preventDefault();
+    setJoinError("");
+    setJoining(true);
     const response = await fetch(`${apiUrl}/classrooms/classes/join`, {
       method: "POST",
       credentials: "include",
@@ -60,14 +65,22 @@ export default function StudentDashboard() {
     });
     if (response.ok) {
       const body = (await response.json()) as {
-        class: { id: string; name: string };
+        classroom: Classroom;
       };
       setClasses([
-        ...classes.filter((item) => item.id !== body.class.id),
-        body.class,
+        ...classes.filter((item) => item.id !== body.classroom.id),
+        body.classroom,
       ]);
       setCode("");
+    } else {
+      const body = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setJoinError(
+        body?.error?.message ?? "The classroom could not be joined.",
+      );
     }
+    setJoining(false);
   };
   const nextExam = exams[0];
   return (
@@ -79,9 +92,10 @@ export default function StudentDashboard() {
         {
           label: "Overview",
           active: true,
+          href: "/",
           icon: <LayoutDashboard size={17} />,
         },
-        { label: "My classes", icon: <Users size={17} /> },
+        { label: "My classes", href: "/classes", icon: <Users size={17} /> },
         { label: "Exams", icon: <BookOpenCheck size={17} /> },
         { label: "Results", icon: <Award size={17} /> },
       ]}
@@ -99,7 +113,9 @@ export default function StudentDashboard() {
         <Metric
           label="Joined classes"
           value={String(classes.length)}
-          detail="One active this week"
+          detail={
+            classes.length === 1 ? "1 active classroom" : "Active classrooms"
+          }
           icon={<Users size={18} />}
         />
         <Metric
@@ -171,7 +187,7 @@ export default function StudentDashboard() {
           <div className="border-b border-[#E4E8E4] px-5 py-4">
             <h2 className="font-bold">Class access</h2>
             <p className="text-xs text-[#7B8883]">
-              Join with a six-character code
+              Join with an eight-character code
             </p>
           </div>
           <form className="p-5" onSubmit={joinClass}>
@@ -184,19 +200,38 @@ export default function StudentDashboard() {
             <div className="flex gap-2">
               <input
                 id="class-code"
-                maxLength={6}
+                maxLength={8}
                 value={code}
-                onChange={(event) => setCode(event.target.value.toUpperCase())}
-                placeholder="ABC123"
+                onChange={(event) =>
+                  setCode(
+                    event.target.value
+                      .toUpperCase()
+                      .replace(/[^A-HJ-NP-Z2-9]/g, "")
+                      .slice(0, 8),
+                  )
+                }
+                placeholder="ABCD2345"
                 className="h-9 min-w-0 flex-1 rounded-md border border-[#D8DED9] px-3 font-mono text-sm uppercase tracking-[0.15em]"
               />
-              <button className="h-9 rounded-md border border-[#D8DDD9] bg-white px-3.5 text-sm font-semibold hover:bg-[#F5F7F5]">
-                Join
+              <button
+                disabled={joining || code.length !== 8}
+                className="h-9 rounded-md border border-[#D8DDD9] bg-white px-3.5 text-sm font-semibold hover:bg-[#F5F7F5] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {joining ? "Joining…" : "Join"}
               </button>
             </div>
+            {joinError && (
+              <p className="mt-3 text-xs text-[#A33D32]">{joinError}</p>
+            )}
             <p className="mt-3 text-xs leading-5 text-[#84908B]">
               Ask your teacher for the code assigned to your class.
             </p>
+            <Link
+              href="/classes"
+              className="mt-4 inline-block text-xs font-semibold text-[#176B5B] hover:underline"
+            >
+              Manage my classrooms
+            </Link>
           </form>
         </Card>
       </div>
