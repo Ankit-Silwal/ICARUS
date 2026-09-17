@@ -19,6 +19,9 @@ questionRouter.post("/import/leetcode", (request, response) =>
 questionRouter.get("/:questionId", (request, response) =>
   questionController.get(request, response),
 );
+questionRouter.patch("/:questionId", (request, response) =>
+  questionController.update(request, response),
+);
 questionRouter.delete("/:questionId", (request, response) =>
   questionController.remove(request, response),
 );

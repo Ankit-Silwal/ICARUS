@@ -1,26 +1,11 @@
 import type { Request, Response } from "express";
-import { IntegrityPolicySchema } from "@icarus/contracts";
+import { CreateExamInputSchema } from "@icarus/contracts";
 import { z } from "zod";
 import { forbidden, unauthenticated } from "../lib/errors.js";
 import { attemptService } from "../services/attempt.service.js";
 import { examService } from "../services/exam.service.js";
 
 const examParamsSchema = z.object({ examId: z.string().uuid() });
-const createExamSchema = z.object({
-  classId: z.string().uuid(),
-  title: z.string().trim().min(2).max(200),
-  startsAt: z.iso.datetime(),
-  endsAt: z.iso.datetime(),
-  durationMinutes: z
-    .number()
-    .int()
-    .min(1)
-    .max(24 * 60),
-  attemptLimit: z.number().int().min(1).max(10).default(1),
-  questionIds: z.array(z.string().uuid()).min(1).max(100),
-  integrityPolicy: IntegrityPolicySchema.optional(),
-});
-
 function identity(request: Request) {
   if (!request.identity) throw unauthenticated();
   return request.identity;
@@ -41,7 +26,7 @@ function teacher(request: Request) {
 
 export class ExamController {
   async create(request: Request, response: Response) {
-    const input = createExamSchema.parse(request.body);
+    const input = CreateExamInputSchema.parse(request.body);
     response.status(201).json({
       exam: await examService.create(teacher(request), cookie(request), input),
     });

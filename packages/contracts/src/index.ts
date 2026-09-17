@@ -115,6 +115,28 @@ export const ExamSchema = z.object({
 });
 export type Exam = z.infer<typeof ExamSchema>;
 
+export const CreateExamInputSchema = z.object({
+  classId: z.string().uuid(),
+  title: z.string().trim().min(2).max(200),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
+  durationMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60),
+  attemptLimit: z.number().int().min(1).max(10).default(1),
+  questionIds: z.array(z.string().uuid()).min(1).max(100),
+  integrityPolicy: IntegrityPolicySchema.optional(),
+});
+export type CreateExamInput = z.infer<typeof CreateExamInputSchema>;
+
+export const ExamSummarySchema = ExamSchema.omit({ questions: true }).extend({
+  questionCount: z.number().int().nonnegative(),
+  totalPoints: z.number().nonnegative(),
+});
+export type ExamSummary = z.infer<typeof ExamSummarySchema>;
+
 export const EditorEventSchema = z.object({
   sequence: z.number().int().nonnegative(),
   occurredAt: z.string().datetime(),

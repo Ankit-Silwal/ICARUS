@@ -53,6 +53,18 @@ export class QuestionController {
     });
   }
 
+  async update(request: Request, response: Response) {
+    const { questionId } = idParamsSchema.parse(request.params);
+    const input = QuestionInputSchema.parse(request.body);
+    response.json({
+      question: await questionService.update(
+        teacher(request).id,
+        questionId,
+        input,
+      ),
+    });
+  }
+
   async previewLeetCode(request: Request, response: Response) {
     teacher(request);
     const { problemNumber } = leetCodeParamsSchema.parse(request.params);

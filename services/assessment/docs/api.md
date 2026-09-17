@@ -7,6 +7,7 @@ All public routes are mounted under `/api/v1/assessments` by the gateway.
 - `GET /questions` — list the signed-in teacher's bank.
 - `POST /questions` — create an MCQ or coding question.
 - `GET /questions/:questionId` — get an owned question.
+- `PATCH /questions/:questionId` — update an owned bank item; existing exam snapshots remain unchanged.
 - `DELETE /questions/:questionId` — remove a bank item; exam snapshots remain intact.
 - `GET /questions/import/leetcode/:problemNumber/preview` — preview public LeetCode metadata, starter snippets, and examples.
 - `POST /questions/import/leetcode` — import a public problem and attach teacher-supplied tests.

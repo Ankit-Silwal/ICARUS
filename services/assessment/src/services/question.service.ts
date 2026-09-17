@@ -60,6 +60,29 @@ export class QuestionService {
     return question;
   }
 
+  async update(
+    teacherId: string,
+    questionId: string,
+    input: Omit<Question, "id">,
+  ) {
+    const existing = await prisma.question.findFirst({
+      where: { id: questionId, teacherId },
+      select: { id: true },
+    });
+    if (!existing) throw notFound("Question");
+    const question = QuestionSchema.parse({ ...input, id: questionId });
+    assertQuestionIsGradable(question);
+    await prisma.question.update({
+      where: { id: questionId },
+      data: {
+        kind: question.kind,
+        title: question.title,
+        payload: toJson(question),
+      },
+    });
+    return question;
+  }
+
   async previewLeetCode(problemNumber: number) {
     return leetCodeService.load(problemNumber);
   }

@@ -2,25 +2,14 @@ import {
   ExamSchema,
   QuestionSchema,
   defaultIntegrityPolicy,
+  type CreateExamInput,
   type Exam,
-  type IntegrityPolicy,
 } from "@icarus/contracts";
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
 import { toJson } from "../lib/json.js";
 import { prisma } from "../lib/prisma.js";
 import type { IdentityUser } from "../types/assessment.types.js";
 import { classroomService } from "./classroom.service.js";
-
-export interface CreateExamInput {
-  classId: string;
-  title: string;
-  startsAt: string;
-  endsAt: string;
-  durationMinutes: number;
-  attemptLimit: number;
-  questionIds: string[];
-  integrityPolicy?: IntegrityPolicy;
-}
 
 function parseExam(row: { payload: unknown; status: string }) {
   const exam = ExamSchema.parse(row.payload);
