@@ -243,8 +243,12 @@ export default function TeacherClassesPage() {
           active: true,
           icon: <Users size={17} />,
         },
-        { label: "Question bank", icon: <FileQuestion size={17} /> },
-        { label: "Exams", icon: <BookOpenCheck size={17} /> },
+        {
+          label: "Question bank",
+          href: "/questions",
+          icon: <FileQuestion size={17} />,
+        },
+        { label: "Exams", href: "/exams", icon: <BookOpenCheck size={17} /> },
         {
           label: "Review & grading",
           href: "/reviews",

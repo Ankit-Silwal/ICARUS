@@ -63,6 +63,7 @@ export const QuestionInputSchema = z.discriminatedUnion("kind", [
   CodeQuestionSchema.omit({ id: true }),
 ]);
 export type Question = z.infer<typeof QuestionSchema>;
+export type QuestionInput = z.infer<typeof QuestionInputSchema>;
 export type CodeQuestion = z.infer<typeof CodeQuestionSchema>;
 
 export const ExamStatusSchema = z.enum([

@@ -269,7 +269,7 @@ export default function IntegrityReviewsPage() {
       initials="MR"
       navigation={[
         { label: "Overview", href: "/", icon: <LayoutDashboard size={17} /> },
-        { label: "Classes", icon: <Users size={17} /> },
+        { label: "Classes", href: "/classes", icon: <Users size={17} /> },
         {
           label: "Review & grading",
           active: true,

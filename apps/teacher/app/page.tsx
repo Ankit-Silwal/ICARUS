@@ -1,6 +1,6 @@
 "use client";
-import type { Classroom } from "@icarus/contracts";
-import { useEffect, useState } from "react";
+
+import type { Classroom, ExamSummary, Question } from "@icarus/contracts";
 import {
   AlertTriangle,
   BookOpenCheck,
@@ -12,118 +12,83 @@ import {
   FileQuestion,
   GraduationCap,
   LayoutDashboard,
-  MoreHorizontal,
   Users,
 } from "lucide-react";
-import { AppShell, StatusPill } from "@repo/ui/shell";
-import { Button } from "@repo/ui/button";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Card } from "@repo/ui/card";
 import { Metric } from "@repo/ui/metric";
+import { AppShell, StatusPill } from "@repo/ui/shell";
 
-type ExamRow = {
-  title: string;
-  className: string;
-  date: string;
-  submissions: string;
-  status: string;
-};
 const apiUrl =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+
+interface ReviewAttempt {
+  id: string;
+  status: string;
+  suggestedReductionPercent: number;
+}
+
+function tone(status: ExamSummary["status"]) {
+  if (status === "PUBLISHED") return "green" as const;
+  if (status === "REVIEW" || status === "CLOSED") return "amber" as const;
+  return "neutral" as const;
+}
+
 export default function TeacherDashboard() {
-  const [modal, setModal] = useState(false);
-  const [exams, setExams] = useState<ExamRow[]>([]);
+  const [exams, setExams] = useState<ExamSummary[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [reviews, setReviews] = useState<ReviewAttempt[]>([]);
+
   useEffect(() => {
     void Promise.all([
       fetch(`${apiUrl}/assessments/exams`, { credentials: "include" }),
       fetch(`${apiUrl}/classrooms/classes`, { credentials: "include" }),
-    ]).then(async ([examResponse, classroomResponse]) => {
-      if (examResponse.ok) {
-        const body = (await examResponse.json()) as {
-          exams: {
-            title: string;
-            classId: string;
-            startsAt: string;
-            status: string;
-          }[];
-        };
-        setExams(
-          body.exams.map((exam) => ({
-            title: exam.title,
-            className: `Class ${exam.classId.slice(0, 8)}`,
-            date: new Date(exam.startsAt).toLocaleString([], {
-              month: "short",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            submissions: "Open roster",
-            status: exam.status[0] + exam.status.slice(1).toLowerCase(),
-          })),
-        );
-      }
-      if (classroomResponse.ok) {
-        const body = (await classroomResponse.json()) as {
-          classrooms: Classroom[];
-        };
-        setClassrooms(body.classrooms);
-      }
-    });
+      fetch(`${apiUrl}/assessments/questions`, { credentials: "include" }),
+      fetch(`${apiUrl}/assessments/reviews`, { credentials: "include" }),
+    ]).then(
+      async ([
+        examResponse,
+        classResponse,
+        questionResponse,
+        reviewResponse,
+      ]) => {
+        if (examResponse.ok) {
+          const body = (await examResponse.json()) as { exams: ExamSummary[] };
+          setExams(body.exams);
+        }
+        if (classResponse.ok) {
+          const body = (await classResponse.json()) as {
+            classrooms: Classroom[];
+          };
+          setClassrooms(body.classrooms);
+        }
+        if (questionResponse.ok) {
+          const body = (await questionResponse.json()) as {
+            questions: Question[];
+          };
+          setQuestions(body.questions);
+        }
+        if (reviewResponse.ok) {
+          const body = (await reviewResponse.json()) as {
+            attempts: ReviewAttempt[];
+          };
+          setReviews(body.attempts);
+        }
+      },
+    );
   }, []);
-  const createQuestion = async () => {
-    const payload = {
-      kind: "CODE",
-      title: "Two Sum",
-      prompt: "Return the indices of two values whose sum equals target.",
-      points: 16,
-      functionName: "twoSum",
-      languages: ["cpp", "java", "python", "javascript"],
-      starterCode: {
-        cpp: "vector<int> twoSum(vector<int>& nums, int target) { return {}; }",
-        java: "public int[] twoSum(int[] nums, int target) { return new int[]{}; }",
-        python: "def twoSum(nums, target):\n    return []",
-        javascript: "function twoSum(nums, target) { return []; }",
-      },
-      tests: [
-        {
-          id: crypto.randomUUID(),
-          label: "Sample",
-          input: [[2, 7, 11, 15], 9],
-          expected: [0, 1],
-          weight: 0,
-          visibility: "SAMPLE",
-        },
-        {
-          id: crypto.randomUUID(),
-          label: "Hidden 1",
-          input: [[3, 2, 4], 6],
-          expected: [1, 2],
-          weight: 8,
-          visibility: "HIDDEN",
-        },
-        {
-          id: crypto.randomUUID(),
-          label: "Hidden 2",
-          input: [[3, 3], 6],
-          expected: [0, 1],
-          weight: 8,
-          visibility: "HIDDEN",
-        },
-      ],
-      source: {
-        provider: "LEETCODE",
-        problemNumber: 1,
-        url: "https://leetcode.com/problems/two-sum/",
-      },
-    };
-    const response = await fetch(`${apiUrl}/assessments/questions`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (response.ok) setModal(false);
-  };
+
+  const reviewCount = reviews.filter(
+    (attempt) =>
+      attempt.status === "SUBMITTED" || attempt.status === "AUTO_SUBMITTED",
+  ).length;
+  const flaggedCount = reviews.filter(
+    (attempt) => attempt.suggestedReductionPercent > 0,
+  ).length;
+  const nextExam = exams.find((exam) => exam.status === "SCHEDULED");
+
   return (
     <AppShell
       role="Teacher"
@@ -137,8 +102,12 @@ export default function TeacherDashboard() {
           icon: <LayoutDashboard size={17} />,
         },
         { label: "Classes", href: "/classes", icon: <Users size={17} /> },
-        { label: "Question bank", icon: <FileQuestion size={17} /> },
-        { label: "Exams", icon: <BookOpenCheck size={17} /> },
+        {
+          label: "Question bank",
+          href: "/questions",
+          icon: <FileQuestion size={17} />,
+        },
+        { label: "Exams", href: "/exams", icon: <BookOpenCheck size={17} /> },
         {
           label: "Review & grading",
           href: "/reviews",
@@ -153,18 +122,25 @@ export default function TeacherDashboard() {
           </p>
           <h1 className="text-2xl font-bold">Your assessment desk</h1>
           <p className="mt-1 text-sm text-[#6E7B76]">
-            Create questions, schedule exams, and review evidence with context.
+            Build questions, schedule exams, and publish reviewed results.
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setModal(true)}>
+          <Link
+            href="/questions"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#D8DDD9] bg-white px-3.5 text-sm font-semibold hover:bg-[#F5F7F5]"
+          >
             <Braces size={16} /> New question
-          </Button>
-          <Button>
+          </Link>
+          <Link
+            href="/exams"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#176B5B] px-3.5 text-sm font-semibold text-white hover:bg-[#125648]"
+          >
             <CirclePlus size={16} /> Create exam
-          </Button>
+          </Link>
         </div>
       </div>
+
       <Card className="mb-6 grid grid-cols-2 py-5 lg:grid-cols-4">
         <Metric
           label="Active classes"
@@ -174,184 +150,102 @@ export default function TeacherDashboard() {
         />
         <Metric
           label="Question bank"
-          value="86"
-          detail="42 coding · 44 MCQ"
+          value={String(questions.length)}
+          detail={`${questions.filter((question) => question.kind === "CODE").length} coding · ${questions.filter((question) => question.kind === "MCQ").length} MCQ`}
           icon={<FileQuestion size={18} />}
         />
         <Metric
           label="Needs review"
-          value="17"
-          detail="Across 2 completed exams"
+          value={String(reviewCount)}
+          detail="Submitted attempts"
           icon={<ClipboardCheck size={18} />}
         />
         <Metric
           label="Flagged edits"
-          value="6"
+          value={String(flaggedCount)}
           detail="Evidence, not verdicts"
           icon={<AlertTriangle size={18} />}
         />
       </Card>
+
       <div className="grid gap-6 xl:grid-cols-[1.45fr_0.8fr]">
-        <Card>
+        <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-[#E4E8E4] px-5 py-4">
             <div>
               <h2 className="font-bold">Recent exams</h2>
               <p className="text-xs text-[#7B8883]">
-                Scheduled, review, and published work
+                Draft, scheduled, review, and published work
               </p>
             </div>
-            <button aria-label="Exam menu" className="text-[#75827D]">
-              <MoreHorizontal size={18} />
-            </button>
+            <Link
+              href="/exams"
+              className="text-xs font-semibold text-[#176B5B]"
+            >
+              Manage exams
+            </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-left">
-              <thead className="bg-[#F7F8F6] text-[11px] uppercase text-[#7B8883]">
-                <tr>
-                  <th className="px-5 py-3">Exam</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Submissions</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EDF0ED]">
-                {exams.map((exam) => (
-                  <tr key={exam.title} className="hover:bg-[#FAFBF9]">
-                    <td className="px-5 py-4">
+          {exams.length === 0 ? (
+            <p className="p-6 text-sm text-[#73807B]">No exams created yet.</p>
+          ) : (
+            <div className="divide-y divide-[#EDF0ED]">
+              {exams.slice(0, 6).map((exam) => {
+                const classroom = classrooms.find(
+                  (item) => item.id === exam.classId,
+                );
+                return (
+                  <Link
+                    href="/exams"
+                    key={exam.id}
+                    className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-[#FAFBF9]"
+                  >
+                    <div className="min-w-0">
                       <div className="text-sm font-semibold">{exam.title}</div>
-                      <div className="text-xs text-[#87928E]">
-                        {exam.className}
+                      <div className="mt-1 text-xs text-[#87928E]">
+                        {classroom?.name ?? `Class ${exam.classId.slice(0, 8)}`}{" "}
+                        · {new Date(exam.startsAt).toLocaleString()}
                       </div>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-[#596761]">
-                      {exam.date}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-medium">
-                      {exam.submissions}
-                    </td>
-                    <td className="px-4 py-4">
-                      <StatusPill
-                        tone={
-                          exam.status === "Review"
-                            ? "amber"
-                            : exam.status === "Published"
-                              ? "green"
-                              : "neutral"
-                        }
-                      >
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <StatusPill tone={tone(exam.status)}>
                         {exam.status}
                       </StatusPill>
-                    </td>
-                    <td className="px-4">
                       <ChevronRight size={16} className="text-[#8A9691]" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </Card>
-        <Card>
+
+        <Card className="h-fit">
           <div className="border-b border-[#E4E8E4] px-5 py-4">
-            <h2 className="font-bold">Upcoming</h2>
-            <p className="text-xs text-[#7B8883]">Next seven days</p>
+            <h2 className="font-bold">Next assessment</h2>
+            <p className="text-xs text-[#7B8883]">Nearest scheduled window</p>
           </div>
           <div className="p-5">
-            <div className="border-l-2 border-[#176B5B] pl-4">
-              <div className="text-xs font-bold uppercase text-[#176B5B]">
-                Thursday · 10:00
-              </div>
-              <div className="mt-1 text-sm font-semibold">
-                Arrays & Hashing · Midterm
-              </div>
-              <div className="mt-1 text-xs text-[#78847F]">
-                32 students · 75 minutes
-              </div>
-            </div>
-            <div className="my-5 h-px bg-[#E7EAE7]" />
-            <div className="flex items-start gap-3">
-              <CalendarClock size={17} className="mt-0.5 text-[#986F1C]" />
-              <div>
-                <div className="text-sm font-semibold">
-                  Question snapshot locks in 18h
+            {nextExam ? (
+              <div className="border-l-2 border-[#176B5B] pl-4">
+                <div className="text-xs font-bold uppercase text-[#176B5B]">
+                  {new Date(nextExam.startsAt).toLocaleString()}
                 </div>
-                <p className="mt-1 text-xs leading-5 text-[#7A8782]">
-                  Changes to the source question will no longer affect this
-                  exam.
-                </p>
+                <div className="mt-1 text-sm font-semibold">
+                  {nextExam.title}
+                </div>
+                <div className="mt-1 text-xs text-[#78847F]">
+                  {nextExam.questionCount} questions ·{" "}
+                  {nextExam.durationMinutes} minutes
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start gap-3 text-sm text-[#73807B]">
+                <CalendarClock size={17} className="mt-0.5" />
+                No scheduled assessment window.
+              </div>
+            )}
           </div>
         </Card>
       </div>
-      {modal && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[#0F1C18]/45 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="New coding question"
-            className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
-          >
-            <div className="flex items-center justify-between border-b border-[#E2E6E3] px-5 py-4">
-              <div>
-                <h2 className="font-bold">New coding question</h2>
-                <p className="text-xs text-[#7D8984]">
-                  Function signature · weighted tests
-                </p>
-              </div>
-              <button
-                onClick={() => setModal(false)}
-                className="text-sm font-semibold text-[#64716C]"
-              >
-                Close
-              </button>
-            </div>
-            <div className="space-y-4 p-5">
-              <label className="block text-xs font-semibold">
-                Title
-                <input
-                  defaultValue="Two Sum"
-                  className="mt-1.5 h-9 w-full rounded-md border border-[#D8DED9] px-3 text-sm"
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs font-semibold">
-                  LeetCode number
-                  <input
-                    defaultValue="1"
-                    className="mt-1.5 h-9 w-full rounded-md border border-[#D8DED9] px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-xs font-semibold">
-                  Maximum marks
-                  <input
-                    defaultValue="16"
-                    className="mt-1.5 h-9 w-full rounded-md border border-[#D8DED9] px-3 text-sm"
-                  />
-                </label>
-              </div>
-              <label className="block text-xs font-semibold">
-                Function name
-                <input
-                  defaultValue="twoSum"
-                  className="mt-1.5 h-9 w-full rounded-md border border-[#D8DED9] px-3 font-mono text-sm"
-                />
-              </label>
-              <div className="rounded-md border border-[#E8DFC0] bg-[#FFF9E9] p-3 text-xs leading-5 text-[#715721]">
-                The reference is stored for attribution. Add only statement
-                content and tests you are licensed to use.
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-[#E2E6E3] px-5 py-4">
-              <Button variant="secondary" onClick={() => setModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={createQuestion}>Save question</Button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppShell>
   );
 }
