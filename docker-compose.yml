@@ -89,18 +89,34 @@ services:
     image: judge0/judge0:1.13.1
     privileged: true
     volumes: ["./infra/judge0/judge0.conf:/judge0.conf:ro"]
+    ports: ["${JUDGE0_PORT:-2358}:2358"]
     depends_on:
       judge0-db: { condition: service_healthy }
       judge0-redis: { condition: service_healthy }
     restart: unless-stopped
+  judge0-configure:
+    image: postgres:16.2-alpine
+    env_file: ./infra/judge0/judge0.conf
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h "$${POSTGRES_HOST}" -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT 1 FROM languages WHERE id = 89" | grep -q 1; do sleep 1; done
+        PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h "$${POSTGRES_HOST}" -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" --set ON_ERROR_STOP=on -f /configure.sql
+    volumes: ["./infra/judge0/configure.sql:/configure.sql:ro"]
+    depends_on:
+      judge0-server: { condition: service_started }
   judge0-worker:
     image: judge0/judge0:1.13.1
     command: ["./scripts/workers"]
     privileged: true
+    cpus: 2.0
+    mem_limit: 2g
+    pids_limit: 256
     volumes: ["./infra/judge0/judge0.conf:/judge0.conf:ro"]
     depends_on:
       judge0-db: { condition: service_healthy }
       judge0-redis: { condition: service_healthy }
+      judge0-configure: { condition: service_completed_successfully }
     restart: unless-stopped
   identity:
     build:
@@ -187,6 +203,7 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       judge0-server: { condition: service_started }
+      judge0-worker: { condition: service_started }
   integrity:
     build:
       {

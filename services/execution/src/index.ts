@@ -3,9 +3,16 @@ import { Queue, Worker, type Job } from "bullmq";
 import { Redis } from "ioredis";
 import { z } from "zod";
 import { CodeQuestionSchema, type CodeQuestion } from "@icarus/contracts";
-import { actor, createService, listen, validate } from "@icarus/service-kit";
+import {
+  actor,
+  createService,
+  listen,
+  logger,
+  validate,
+} from "@icarus/service-kit";
+import { env } from "./config.js";
 import { buildHarness } from "./harness.js";
-import { assertJudgeInfrastructureHealthy } from "./judge.js";
+import { Judge0Client, parseHarnessResults } from "./judge.js";
 
 const app = createService("execution");
 const requestSchema = z.object({
@@ -18,20 +25,21 @@ const requestSchema = z.object({
 type ExecutionRequest = z.infer<typeof requestSchema>;
 type ExecutionJob = ExecutionRequest & { studentId: string };
 const languageIds: Record<ExecutionRequest["language"], number> = {
-  cpp: Number(process.env.JUDGE0_CPP_ID ?? 54),
-  java: Number(process.env.JUDGE0_JAVA_ID ?? 62),
-  python: Number(process.env.JUDGE0_PYTHON_ID ?? 71),
-  javascript: Number(process.env.JUDGE0_JAVASCRIPT_ID ?? 63),
+  cpp: env.JUDGE0_CPP_ID,
+  java: env.JUDGE0_JAVA_ID,
+  python: env.JUDGE0_PYTHON_ID,
+  javascript: env.JUDGE0_JAVASCRIPT_ID,
 };
-const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
+const redis = new Redis(env.REDIS_URL, {
   maxRetriesPerRequest: null,
 });
 const queue = new Queue<ExecutionJob>("icarus-execution", {
   connection: redis,
 });
-const assessmentUrl = process.env.ASSESSMENT_URL ?? "http://localhost:4003";
-const judgeUrl = process.env.JUDGE0_URL ?? "http://localhost:2358";
-const internalToken = process.env.INTERNAL_SERVICE_TOKEN ?? "";
+const judge = new Judge0Client({
+  baseUrl: env.JUDGE0_URL,
+  authToken: env.JUDGE0_TOKEN,
+});
 
 async function loadQuestion(
   attemptId: string,
@@ -39,38 +47,21 @@ async function loadQuestion(
   studentId: string,
 ): Promise<CodeQuestion> {
   const response = await fetch(
-    `${assessmentUrl}/internal/attempts/${attemptId}/questions/${questionId}`,
+    `${env.ASSESSMENT_URL}/internal/attempts/${attemptId}/questions/${questionId}`,
     {
       headers: {
-        authorization: `Bearer ${internalToken}`,
+        authorization: `Bearer ${env.INTERNAL_SERVICE_TOKEN}`,
         "x-user-id": studentId,
         "x-user-role": "STUDENT",
       },
+      signal: AbortSignal.timeout(5_000),
     },
   );
-  if (!response.ok) throw new Error("Question could not be loaded.");
+  if (!response.ok) {
+    throw new Error(`Question could not be loaded (${response.status}).`);
+  }
   const payload = (await response.json()) as { question: unknown };
   return CodeQuestionSchema.parse(payload.question);
-}
-
-async function waitForJudge(token: string) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const response = await fetch(
-      `${judgeUrl}/submissions/${token}?base64_encoded=true&fields=status,stdout,stderr,compile_output,time,memory`,
-    );
-    if (!response.ok) throw new Error("Judge0 status request failed.");
-    const result = (await response.json()) as {
-      status: { id: number; description: string };
-      stdout?: string | null;
-      stderr?: string | null;
-      compile_output?: string | null;
-      time?: string;
-      memory?: number;
-    };
-    if (![1, 2].includes(result.status.id)) return result;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error("Judge0 did not finish within 30 seconds.");
 }
 
 async function processExecution(job: Job<ExecutionJob>) {
@@ -89,41 +80,25 @@ async function processExecution(job: Job<ExecutionJob>) {
     job.data.mode,
   );
   await job.updateProgress(10);
-  const response = await fetch(
-    `${judgeUrl}/submissions?base64_encoded=true&wait=false`,
+  const token = await judge.submit(
+    harness.source,
+    languageIds[job.data.language],
     {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(process.env.JUDGE0_TOKEN
-          ? { "X-Auth-Token": process.env.JUDGE0_TOKEN }
-          : {}),
-      },
-      body: JSON.stringify({
-        source_code: Buffer.from(harness.source).toString("base64"),
-        language_id: languageIds[job.data.language],
-        cpu_time_limit: 3,
-        wall_time_limit: 8,
-        memory_limit: 128000,
-        enable_network: false,
-      }),
+      memoryLimitKilobytes:
+        job.data.language === "java"
+          ? 1_536_000
+          : job.data.language === "javascript"
+            ? 1_024_000
+            : 128_000,
+      cpuTimeSeconds: job.data.language === "javascript" ? 10 : 3,
+      wallTimeSeconds: job.data.language === "javascript" ? 15 : 8,
     },
   );
-  if (!response.ok) {
-    throw new Error(`Judge0 rejected the submission (${response.status}).`);
-  }
-  const { token } = z
-    .object({ token: z.string() })
-    .parse(await response.json());
   await job.updateProgress(35);
-  const judge = await waitForJudge(token);
-  assertJudgeInfrastructureHealthy(judge.status);
+  const judgeResult = await judge.waitForResult(token);
   let passed: boolean[] = [];
-  if (judge.status.id === 3 && judge.stdout) {
-    const stdout = Buffer.from(judge.stdout, "base64").toString("utf8").trim();
-    passed = z
-      .object({ results: z.array(z.boolean()) })
-      .parse(JSON.parse(stdout)).results;
+  if (judgeResult.status.id === 3 && judgeResult.stdout) {
+    passed = parseHarnessResults(judgeResult.stdout, harness.tests.length);
   }
   const cases = harness.tests.map((test, index) => ({
     id: test.id,
@@ -138,25 +113,25 @@ async function processExecution(job: Job<ExecutionJob>) {
   );
   const details = {
     judgeToken: token,
-    status: judge.status.description,
+    status: judgeResult.status.description,
     cases,
     score,
-    time: judge.time,
-    memory: judge.memory,
-    compileOutput: judge.compile_output
-      ? Buffer.from(judge.compile_output, "base64").toString("utf8")
+    time: judgeResult.time,
+    memory: judgeResult.memory,
+    compileOutput: judgeResult.compile_output
+      ? Buffer.from(judgeResult.compile_output, "base64").toString("utf8")
       : null,
-    stderr: judge.stderr
-      ? Buffer.from(judge.stderr, "base64").toString("utf8")
+    stderr: judgeResult.stderr
+      ? Buffer.from(judgeResult.stderr, "base64").toString("utf8")
       : null,
   };
   if (job.data.mode === "SUBMIT") {
     const callback = await fetch(
-      `${assessmentUrl}/internal/attempts/${job.data.attemptId}/code-score`,
+      `${env.ASSESSMENT_URL}/internal/attempts/${job.data.attemptId}/code-score`,
       {
         method: "PATCH",
         headers: {
-          authorization: `Bearer ${internalToken}`,
+          authorization: `Bearer ${env.INTERNAL_SERVICE_TOKEN}`,
           "content-type": "application/json",
         },
         body: JSON.stringify({
@@ -164,19 +139,32 @@ async function processExecution(job: Job<ExecutionJob>) {
           score,
           details,
         }),
+        signal: AbortSignal.timeout(5_000),
       },
     );
-    if (!callback.ok) throw new Error("Assessment score callback failed.");
+    if (!callback.ok) {
+      throw new Error(`Assessment score callback failed (${callback.status}).`);
+    }
   }
   await job.updateProgress(100);
   return details;
 }
 
-if (process.env.DISABLE_EXECUTION_WORKER !== "true") {
-  new Worker<ExecutionJob>("icarus-execution", processExecution, {
-    connection: redis,
-    concurrency: Number(process.env.EXECUTION_CONCURRENCY ?? 2),
-  });
+if (env.DISABLE_EXECUTION_WORKER !== "true") {
+  const worker = new Worker<ExecutionJob>(
+    "icarus-execution",
+    processExecution,
+    {
+      connection: redis,
+      concurrency: env.EXECUTION_CONCURRENCY,
+    },
+  );
+  worker.on("failed", (job, error) =>
+    logger.error({ jobId: job?.id, error }, "execution job failed"),
+  );
+  worker.on("error", (error) =>
+    logger.error({ error }, "execution worker failed"),
+  );
 }
 
 app.get("/languages", (_request, response) =>
@@ -199,7 +187,7 @@ app.post("/execute", validate(requestSchema), async (request, response) => {
   }
   const digest = createHash("sha256")
     .update(
-      `${request.body.attemptId}:${request.body.questionId}:${request.body.mode}:${request.body.sourceCode}`,
+      `${user.id}:${request.body.attemptId}:${request.body.questionId}:${request.body.language}:${request.body.mode}:${request.body.sourceCode}`,
     )
     .digest("hex")
     .slice(0, 32);
@@ -245,4 +233,4 @@ app.get("/executions/:jobId", async (request, response) => {
   });
 });
 
-listen(app, Number(process.env.PORT ?? 4004));
+listen(app, env.PORT);
